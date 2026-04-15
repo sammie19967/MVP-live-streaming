@@ -1,5 +1,5 @@
-import { AuthShell } from "@/components/auth-shell";
+import { LiveDashboard } from "@/components/live-dashboard";
 
 export default function HomePage() {
-  return <AuthShell />;
+  return <LiveDashboard />;
 }

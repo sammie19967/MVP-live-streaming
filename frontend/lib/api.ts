@@ -19,6 +19,26 @@ export type AuthResponse = {
   user: User;
 };
 
+export type LiveSession = {
+  id: number;
+  creator: User;
+  title: string;
+  status: "scheduled" | "live" | "ended";
+  livekit_room_name: string;
+  started_at: string | null;
+  ended_at: string | null;
+  viewer_count_cached: number;
+  thumbnail_url: string;
+  created_at: string;
+};
+
+export type LiveTokenResponse = {
+  token: string;
+  livekit_url: string;
+  room_name: string;
+  role: "creator" | "viewer";
+};
+
 export type RegisterPayload = {
   username: string;
   email: string;
@@ -98,4 +118,64 @@ export async function getCurrentUser(token: string) {
   });
 
   return parseResponse<User>(response);
+}
+
+export async function getLiveFeed() {
+  const response = await fetch(`${API_BASE_URL}/api/live/feed`, {
+    cache: "no-store",
+  });
+
+  return parseResponse<LiveSession[]>(response);
+}
+
+export async function getLiveSession(sessionId: string | number) {
+  const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}`, {
+    cache: "no-store",
+  });
+
+  return parseResponse<LiveSession>(response);
+}
+
+export async function startLiveSession(
+  token: string,
+  payload: { title: string; thumbnail_url?: string },
+) {
+  const response = await fetch(`${API_BASE_URL}/api/live/start`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Token ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return parseResponse<LiveSession>(response);
+}
+
+export async function endLiveSession(token: string, sessionId: string | number) {
+  const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/end`, {
+    method: "POST",
+    headers: {
+      Authorization: `Token ${token}`,
+    },
+  });
+
+  return parseResponse<LiveSession>(response);
+}
+
+export async function getLiveToken(
+  token: string,
+  sessionId: string | number,
+  role: "creator" | "viewer",
+) {
+  const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Token ${token}`,
+    },
+    body: JSON.stringify({ role }),
+  });
+
+  return parseResponse<LiveTokenResponse>(response);
 }

@@ -314,6 +314,91 @@ main {
   background: rgba(255, 255, 255, 0.58);
 }
 
+.session-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.session-card,
+.empty-state,
+.video-card,
+.empty-stage {
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.session-card {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+}
+
+.session-card__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.session-card__title {
+  font-size: 1.25rem;
+  letter-spacing: -0.04em;
+}
+
+.session-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.4rem;
+  min-height: 2rem;
+  padding: 0 0.75rem;
+  border-radius: 999px;
+  background: #ffefe5;
+  color: var(--accent-strong);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+}
+
+.empty-state,
+.empty-stage {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.5rem;
+}
+
+.room-layout {
+  align-items: start;
+}
+
+.live-stage {
+  display: grid;
+  gap: 1rem;
+}
+
+.video-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.video-card {
+  overflow: hidden;
+}
+
+.video-card video {
+  width: 100%;
+  min-height: 360px;
+  object-fit: cover;
+  background: #111;
+}
+
+.video-caption {
+  padding: 0.85rem 1rem;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+}
+
 @media (max-width: 900px) {
   .two-col {
     grid-template-columns: 1fr;

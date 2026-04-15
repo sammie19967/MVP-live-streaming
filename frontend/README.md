@@ -6,6 +6,9 @@ This Next.js app currently implements the auth layer for the live MVP:
 - login
 - logout
 - current-user session restore
+- live feed
+- creator go-live setup
+- live room join and publish with LiveKit
 
 ## Setup
 
@@ -25,10 +28,11 @@ Open `http://localhost:3000`.
 - `/`
 - `/login`
 - `/register`
+- `/live/setup`
+- `/live/[sessionId]`
 
 ## Next Frontend Work
 
-- live feed page
-- creator go-live flow
-- LiveKit room join and playback
 - comments and reactions UI
+- feed ranking and swipe UX
+- viewer counts and presence
