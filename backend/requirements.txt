@@ -1,0 +1,8 @@
+django
+djangorestframework
+channels
+channels-redis
+django-cors-headers
+psycopg[binary]
+python-dotenv
+livekit-api
