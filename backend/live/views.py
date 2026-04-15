@@ -7,10 +7,14 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from live.models import LiveSession
+from live.models import Comment, LiveSession, Reaction
 from live.serializers import (
+    CommentSerializer,
+    CreateCommentSerializer,
+    CreateReactionSerializer,
     LiveSessionSerializer,
     LiveTokenRequestSerializer,
+    ReactionSerializer,
     StartLiveSessionSerializer,
 )
 
@@ -118,4 +122,66 @@ class LiveSessionTokenView(APIView):
                 "room_name": session.livekit_room_name,
                 "role": role,
             }
+        )
+
+
+class LiveCommentsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_session(self, session_id):
+        return LiveSession.objects.filter(id=session_id).select_related("creator").first()
+
+    def get(self, request, session_id):
+        session = self.get_session(session_id)
+        if not session:
+            return Response({"detail": "Live session not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        comments = session.comments.filter(is_deleted=False).select_related("user", "user__profile")
+        return Response(CommentSerializer(comments, many=True).data)
+
+    def post(self, request, session_id):
+        session = self.get_session(session_id)
+        if not session:
+            return Response({"detail": "Live session not found."}, status=status.HTTP_404_NOT_FOUND)
+        if session.status != LiveSession.Status.LIVE:
+            return Response({"detail": "Comments are only allowed on active live sessions."}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = CreateCommentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        comment = Comment.objects.create(
+            session=session,
+            user=request.user,
+            body=serializer.validated_data["body"],
+        )
+        return Response(CommentSerializer(comment).data, status=status.HTTP_201_CREATED)
+
+
+class LiveReactionsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, session_id):
+        session = LiveSession.objects.filter(id=session_id).first()
+        if not session:
+            return Response({"detail": "Live session not found."}, status=status.HTTP_404_NOT_FOUND)
+        if session.status != LiveSession.Status.LIVE:
+            return Response({"detail": "Reactions are only allowed on active live sessions."}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = CreateReactionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reaction_type = serializer.validated_data["type"]
+
+        reaction, created = Reaction.objects.get_or_create(
+            session=session,
+            user=request.user,
+            type=reaction_type,
+        )
+        heart_count = session.reactions.filter(type=Reaction.Type.HEART).count()
+        response_serializer = ReactionSerializer(reaction)
+        return Response(
+            {
+                "created": created,
+                "reaction": response_serializer.data,
+                "heart_count": heart_count,
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )

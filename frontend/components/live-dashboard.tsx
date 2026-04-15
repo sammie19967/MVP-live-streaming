@@ -192,6 +192,9 @@ export function LiveDashboard() {
                 <p className="muted">
                   Cached viewers: {session.viewer_count_cached}
                 </p>
+                <p className="muted">
+                  {session.comment_count} comments • {session.heart_count} hearts
+                </p>
                 <Link className="button" href={`/live/${session.id}`}>
                   Join room
                 </Link>

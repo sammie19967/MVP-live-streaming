@@ -37,4 +37,48 @@ class LiveSession(models.Model):
             self.livekit_room_name = f"live-{self.creator_id}-{suffix}"
         super().save(*args, **kwargs)
 
-# Create your models here.
+
+class Comment(models.Model):
+    session = models.ForeignKey(
+        LiveSession,
+        on_delete=models.CASCADE,
+        related_name="comments",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="live_comments",
+    )
+    body = models.TextField(max_length=500)
+    is_deleted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+
+class Reaction(models.Model):
+    class Type(models.TextChoices):
+        HEART = "heart", "Heart"
+
+    session = models.ForeignKey(
+        LiveSession,
+        on_delete=models.CASCADE,
+        related_name="reactions",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="live_reactions",
+    )
+    type = models.CharField(max_length=20, choices=Type.choices, default=Type.HEART)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["session", "user", "type"],
+                name="unique_live_reaction_per_type",
+            )
+        ]
+        ordering = ["-created_at"]

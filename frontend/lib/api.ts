@@ -30,6 +30,8 @@ export type LiveSession = {
   viewer_count_cached: number;
   thumbnail_url: string;
   created_at: string;
+  comment_count: number;
+  heart_count: number;
 };
 
 export type LiveTokenResponse = {
@@ -37,6 +39,15 @@ export type LiveTokenResponse = {
   livekit_url: string;
   room_name: string;
   role: "creator" | "viewer";
+};
+
+export type Comment = {
+  id: number;
+  session: number;
+  user: User;
+  body: string;
+  is_deleted: boolean;
+  created_at: string;
 };
 
 export type RegisterPayload = {
@@ -178,4 +189,49 @@ export async function getLiveToken(
   });
 
   return parseResponse<LiveTokenResponse>(response);
+}
+
+export async function getLiveComments(token: string, sessionId: string | number) {
+  const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/comments`, {
+    headers: {
+      Authorization: `Token ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  return parseResponse<Comment[]>(response);
+}
+
+export async function postLiveComment(
+  token: string,
+  sessionId: string | number,
+  body: string,
+) {
+  const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/comments`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Token ${token}`,
+    },
+    body: JSON.stringify({ body }),
+  });
+
+  return parseResponse<Comment>(response);
+}
+
+export async function postLiveReaction(
+  token: string,
+  sessionId: string | number,
+  type: "heart" = "heart",
+) {
+  const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/reactions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Token ${token}`,
+    },
+    body: JSON.stringify({ type }),
+  });
+
+  return parseResponse<{ created: boolean; heart_count: number }>(response);
 }

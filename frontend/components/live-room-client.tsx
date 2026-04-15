@@ -16,8 +16,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import {
   endLiveSession,
+  getLiveComments,
   getLiveSession,
   getLiveToken,
+  postLiveComment,
+  postLiveReaction,
+  type Comment,
   type LiveSession,
   type LiveTokenResponse,
 } from "@/lib/api";
@@ -27,6 +31,7 @@ type LiveRoomClientProps = {
 };
 
 const ROOM_POLL_INTERVAL_MS = 5000;
+const COMMENTS_POLL_INTERVAL_MS = 3000;
 
 function Stage() {
   const cameraTracks = useTracks([
@@ -70,9 +75,13 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
   const { token, user } = useAuth();
   const [session, setSession] = useState<LiveSession | null>(null);
   const [livekit, setLivekit] = useState<LiveTokenResponse | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [ending, setEnding] = useState(false);
+  const [commentBody, setCommentBody] = useState("");
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+  const [heartSubmitting, setHeartSubmitting] = useState(false);
 
   const requestedRole = searchParams.get("role") === "creator" ? "creator" : "viewer";
   const resolvedRole = useMemo(() => {
@@ -170,6 +179,105 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
     };
   }, [router, session, sessionId]);
 
+  useEffect(() => {
+    if (!token || !session) {
+      return;
+    }
+
+    const authToken = token;
+    let isActive = true;
+
+    async function refreshComments() {
+      try {
+        const data = await getLiveComments(authToken, sessionId);
+        if (!isActive) {
+          return;
+        }
+        setComments(data);
+      } catch (refreshError) {
+        if (!isActive) {
+          return;
+        }
+        setError(
+          refreshError instanceof Error
+            ? refreshError.message
+            : "Unable to refresh live comments.",
+        );
+      }
+    }
+
+    void refreshComments();
+    const intervalId = window.setInterval(() => {
+      void refreshComments();
+    }, COMMENTS_POLL_INTERVAL_MS);
+
+    return () => {
+      isActive = false;
+      window.clearInterval(intervalId);
+    };
+  }, [session, sessionId, token]);
+
+  async function handleCommentSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !commentBody.trim()) {
+      return;
+    }
+
+    setCommentSubmitting(true);
+    setError(null);
+
+    try {
+      const nextComment = await postLiveComment(token, sessionId, commentBody.trim());
+      setComments((current) => [...current, nextComment]);
+      setSession((current) =>
+        current
+          ? {
+              ...current,
+              comment_count: current.comment_count + 1,
+            }
+          : current,
+      );
+      setCommentBody("");
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : "Unable to post comment.",
+      );
+    } finally {
+      setCommentSubmitting(false);
+    }
+  }
+
+  async function handleHeart() {
+    if (!token) {
+      return;
+    }
+
+    setHeartSubmitting(true);
+    setError(null);
+
+    try {
+      const response = await postLiveReaction(token, sessionId, "heart");
+      setSession((current) =>
+        current
+          ? {
+              ...current,
+              heart_count: response.heart_count,
+            }
+          : current,
+      );
+    } catch (reactionError) {
+      setError(
+        reactionError instanceof Error
+          ? reactionError.message
+          : "Unable to send heart reaction.",
+      );
+    } finally {
+      setHeartSubmitting(false);
+    }
+  }
+
   async function handleEndLive() {
     if (!token || !session) {
       return;
@@ -222,7 +330,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
           </p>
         </section>
       ) : session && livekit ? (
-        <div className="grid two-col room-layout">
+        <div className="grid room-layout room-grid">
           <section className="panel stack">
             <span className="eyebrow">{resolvedRole === "creator" ? "Broadcasting" : "Watching"}</span>
             <h1 className="section-title">{session.title}</h1>
@@ -246,7 +354,17 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
                 <dt>Room sync</dt>
                 <dd>Auto-refreshing every 5s</dd>
               </div>
+              <div>
+                <dt>Engagement</dt>
+                <dd>{session.comment_count} comments • {session.heart_count} hearts</dd>
+              </div>
             </dl>
+
+            <div className="inline-actions">
+              <button className="button" disabled={heartSubmitting} onClick={() => void handleHeart()} type="button">
+                {heartSubmitting ? "Sending..." : `Send heart (${session.heart_count})`}
+              </button>
+            </div>
           </section>
 
           <section className="panel stack">
@@ -261,6 +379,57 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
               <Stage />
             </LiveKitRoom>
           </section>
+
+          <aside className="panel stack comments-panel">
+            <div className="status-row">
+              <h2 className="section-title">Live chat</h2>
+              <span className="muted">Refreshing every 3s</span>
+            </div>
+
+            <form className="stack" onSubmit={handleCommentSubmit}>
+              <div className="field">
+                <label htmlFor="comment">Comment</label>
+                <input
+                  id="comment"
+                  maxLength={500}
+                  onChange={(event) => setCommentBody(event.target.value)}
+                  placeholder="Say something in the stream..."
+                  value={commentBody}
+                />
+              </div>
+              <button className="button" disabled={commentSubmitting || !commentBody.trim()} type="submit">
+                {commentSubmitting ? "Posting..." : "Send comment"}
+              </button>
+            </form>
+
+            <div className="comment-list">
+              {comments.length ? (
+                comments.map((comment) => (
+                  <article className="comment-card" key={comment.id}>
+                    <div className="comment-card__meta">
+                      <strong>
+                        {comment.user.profile.display_name || comment.user.username}
+                      </strong>
+                      <span className="muted">
+                        {new Intl.DateTimeFormat(undefined, {
+                          hour: "numeric",
+                          minute: "2-digit",
+                        }).format(new Date(comment.created_at))}
+                      </span>
+                    </div>
+                    <p>{comment.body}</p>
+                  </article>
+                ))
+              ) : (
+                <div className="empty-stage">
+                  <h3 className="section-title">No comments yet</h3>
+                  <p className="section-copy">
+                    Start the conversation from this panel.
+                  </p>
+                </div>
+              )}
+            </div>
+          </aside>
         </div>
       ) : (
         <section className="panel stack">

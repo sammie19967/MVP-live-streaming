@@ -372,6 +372,10 @@ main {
   align-items: start;
 }
 
+.room-grid {
+  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.4fr) minmax(280px, 0.9fr);
+}
+
 .live-stage {
   display: grid;
   gap: 1rem;
@@ -399,8 +403,39 @@ main {
   border-top: 1px solid var(--line);
 }
 
+.comments-panel {
+  max-height: 80vh;
+}
+
+.comment-list {
+  display: grid;
+  gap: 0.85rem;
+  overflow: auto;
+  padding-right: 0.25rem;
+}
+
+.comment-card {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.comment-card__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 @media (max-width: 900px) {
   .two-col {
+    grid-template-columns: 1fr;
+  }
+
+  .room-grid {
     grid-template-columns: 1fr;
   }
 
