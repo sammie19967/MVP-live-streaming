@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from live.models import Comment, LiveSession, Reaction
+from live.realtime import broadcast_feed_event, broadcast_room_event
 from live.serializers import (
     CommentSerializer,
     CreateCommentSerializer,
@@ -64,7 +65,17 @@ class StartLiveSessionView(APIView):
             status=LiveSession.Status.LIVE,
             started_at=timezone.now(),
         )
-        return Response(LiveSessionSerializer(session).data, status=status.HTTP_201_CREATED)
+        session_data = LiveSessionSerializer(session).data
+        broadcast_feed_event(
+            "session.started",
+            {"type": "session.started", "session": session_data},
+        )
+        broadcast_room_event(
+            session.id,
+            "session.updated",
+            {"type": "session.updated", "session": session_data},
+        )
+        return Response(session_data, status=status.HTTP_201_CREATED)
 
 
 class LiveSessionEndView(APIView):
@@ -79,7 +90,17 @@ class LiveSessionEndView(APIView):
         session.status = LiveSession.Status.ENDED
         session.ended_at = timezone.now()
         session.save(update_fields=["status", "ended_at"])
-        return Response(LiveSessionSerializer(session).data)
+        session_data = LiveSessionSerializer(session).data
+        broadcast_feed_event(
+            "session.ended",
+            {"type": "session.ended", "session": session_data},
+        )
+        broadcast_room_event(
+            session.id,
+            "session.ended",
+            {"type": "session.ended", "session": session_data},
+        )
+        return Response(session_data)
 
 
 class LiveSessionTokenView(APIView):
@@ -153,7 +174,23 @@ class LiveCommentsView(APIView):
             user=request.user,
             body=serializer.validated_data["body"],
         )
-        return Response(CommentSerializer(comment).data, status=status.HTTP_201_CREATED)
+        comment_data = CommentSerializer(comment).data
+        session_data = LiveSessionSerializer(session).data
+        broadcast_room_event(
+            session.id,
+            "comment.created",
+            {"type": "comment.created", "comment": comment_data},
+        )
+        broadcast_room_event(
+            session.id,
+            "session.updated",
+            {"type": "session.updated", "session": session_data},
+        )
+        broadcast_feed_event(
+            "session.updated",
+            {"type": "session.updated", "session": session_data},
+        )
+        return Response(comment_data, status=status.HTTP_201_CREATED)
 
 
 class LiveReactionsView(APIView):
@@ -177,6 +214,25 @@ class LiveReactionsView(APIView):
         )
         heart_count = session.reactions.filter(type=Reaction.Type.HEART).count()
         response_serializer = ReactionSerializer(reaction)
+        session_data = LiveSessionSerializer(session).data
+        broadcast_room_event(
+            session.id,
+            "reaction.created",
+            {
+                "type": "reaction.created",
+                "reaction": response_serializer.data,
+                "heart_count": heart_count,
+            },
+        )
+        broadcast_room_event(
+            session.id,
+            "session.updated",
+            {"type": "session.updated", "session": session_data},
+        )
+        broadcast_feed_event(
+            "session.updated",
+            {"type": "session.updated", "session": session_data},
+        )
         return Response(
             {
                 "created": created,

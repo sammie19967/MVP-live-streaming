@@ -64,6 +64,17 @@ export type LoginPayload = {
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+const WS_BASE_URL =
+  process.env.NEXT_PUBLIC_WS_BASE_URL ?? deriveWebSocketBaseUrl(API_BASE_URL);
+
+function deriveWebSocketBaseUrl(httpBaseUrl: string) {
+  const url = new URL(httpBaseUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.pathname = "";
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/$/, "");
+}
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const responseText = await response.text();
@@ -234,4 +245,13 @@ export async function postLiveReaction(
   });
 
   return parseResponse<{ created: boolean; heart_count: number }>(response);
+}
+
+export function buildWebSocketUrl(path: string, token?: string | null) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const url = new URL(`${WS_BASE_URL}${normalizedPath}`);
+  if (token) {
+    url.searchParams.set("token", token);
+  }
+  return url.toString();
 }

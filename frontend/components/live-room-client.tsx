@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import {
+  buildWebSocketUrl,
   endLiveSession,
   getLiveComments,
   getLiveSession,
@@ -29,9 +30,6 @@ import {
 type LiveRoomClientProps = {
   sessionId: string;
 };
-
-const ROOM_POLL_INTERVAL_MS = 5000;
-const COMMENTS_POLL_INTERVAL_MS = 3000;
 
 function Stage() {
   const cameraTracks = useTracks([
@@ -139,47 +137,6 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
   }, [requestedRole, sessionId, token]);
 
   useEffect(() => {
-    if (!session) {
-      return;
-    }
-
-    let isActive = true;
-
-    async function refreshSession() {
-      try {
-        const sessionData = await getLiveSession(sessionId);
-        if (!isActive) {
-          return;
-        }
-
-        setSession(sessionData);
-        if (sessionData.status === "ended") {
-          router.push("/");
-          router.refresh();
-        }
-      } catch (refreshError) {
-        if (!isActive) {
-          return;
-        }
-        setError(
-          refreshError instanceof Error
-            ? refreshError.message
-            : "Unable to refresh the live room state.",
-        );
-      }
-    }
-
-    const intervalId = window.setInterval(() => {
-      void refreshSession();
-    }, ROOM_POLL_INTERVAL_MS);
-
-    return () => {
-      isActive = false;
-      window.clearInterval(intervalId);
-    };
-  }, [router, session, sessionId]);
-
-  useEffect(() => {
     if (!token || !session) {
       return;
     }
@@ -187,35 +144,89 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
     const authToken = token;
     let isActive = true;
 
-    async function refreshComments() {
+    async function loadComments() {
       try {
         const data = await getLiveComments(authToken, sessionId);
         if (!isActive) {
           return;
         }
         setComments(data);
-      } catch (refreshError) {
+      } catch (loadError) {
         if (!isActive) {
           return;
         }
         setError(
-          refreshError instanceof Error
-            ? refreshError.message
-            : "Unable to refresh live comments.",
+          loadError instanceof Error
+            ? loadError.message
+            : "Unable to load live comments.",
         );
       }
     }
 
-    void refreshComments();
-    const intervalId = window.setInterval(() => {
-      void refreshComments();
-    }, COMMENTS_POLL_INTERVAL_MS);
+    void loadComments();
 
     return () => {
       isActive = false;
-      window.clearInterval(intervalId);
     };
   }, [session, sessionId, token]);
+
+  useEffect(() => {
+    if (!token || !session) {
+      return;
+    }
+
+    const socket = new WebSocket(
+      buildWebSocketUrl(`/ws/live/sessions/${sessionId}/`, token),
+    );
+
+    socket.onmessage = (event) => {
+      const payload = JSON.parse(event.data) as
+        | { type: "comment.created"; comment: Comment }
+        | { type: "reaction.created"; heart_count: number }
+        | { type: "session.updated" | "session.ended"; session: LiveSession };
+
+      if (payload.type === "comment.created") {
+        setComments((current) => {
+          if (current.some((comment) => comment.id === payload.comment.id)) {
+            return current;
+          }
+          return [...current, payload.comment];
+        });
+        return;
+      }
+
+      if (payload.type === "reaction.created") {
+        setSession((current) =>
+          current
+            ? {
+                ...current,
+                heart_count: payload.heart_count,
+              }
+            : current,
+        );
+        return;
+      }
+
+      if (payload.type === "session.updated") {
+        setSession(payload.session);
+        return;
+      }
+
+      if (payload.type === "session.ended") {
+        setSession(payload.session);
+        router.push("/");
+        router.refresh();
+      }
+    };
+
+    socket.onerror = () => {
+      setError("Room socket disconnected. Refresh to reconnect.");
+    };
+
+    return () => {
+      socket.close();
+    };
+  }, [router, session, sessionId, token]);
 
   async function handleCommentSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -227,16 +238,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
     setError(null);
 
     try {
-      const nextComment = await postLiveComment(token, sessionId, commentBody.trim());
-      setComments((current) => [...current, nextComment]);
-      setSession((current) =>
-        current
-          ? {
-              ...current,
-              comment_count: current.comment_count + 1,
-            }
-          : current,
-      );
+      await postLiveComment(token, sessionId, commentBody.trim());
       setCommentBody("");
     } catch (submitError) {
       setError(
@@ -258,15 +260,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
     setError(null);
 
     try {
-      const response = await postLiveReaction(token, sessionId, "heart");
-      setSession((current) =>
-        current
-          ? {
-              ...current,
-              heart_count: response.heart_count,
-            }
-          : current,
-      );
+      await postLiveReaction(token, sessionId, "heart");
     } catch (reactionError) {
       setError(
         reactionError instanceof Error
@@ -352,11 +346,11 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
               </div>
               <div>
                 <dt>Room sync</dt>
-                <dd>Auto-refreshing every 5s</dd>
+                <dd>WebSocket live updates</dd>
               </div>
               <div>
                 <dt>Engagement</dt>
-                <dd>{session.comment_count} comments • {session.heart_count} hearts</dd>
+                <dd>{session.comment_count} comments | {session.heart_count} hearts</dd>
               </div>
             </dl>
 
@@ -383,7 +377,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
           <aside className="panel stack comments-panel">
             <div className="status-row">
               <h2 className="section-title">Live chat</h2>
-              <span className="muted">Refreshing every 3s</span>
+              <span className="muted">Instant WebSocket updates</span>
             </div>
 
             <form className="stack" onSubmit={handleCommentSubmit}>

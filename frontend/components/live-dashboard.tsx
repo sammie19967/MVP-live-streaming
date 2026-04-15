@@ -4,9 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { getLiveFeed, type LiveSession } from "@/lib/api";
-
-const FEED_POLL_INTERVAL_MS = 5000;
+import { buildWebSocketUrl, getLiveFeed, type LiveSession } from "@/lib/api";
 
 function formatStartedAt(value: string | null) {
   if (!value) {
@@ -30,11 +28,7 @@ export function LiveDashboard() {
   useEffect(() => {
     let isActive = true;
 
-    async function loadFeed(isInitialLoad = false) {
-      if (isInitialLoad) {
-        setFeedLoading(true);
-      }
-
+    async function loadFeed() {
       try {
         const data = await getLiveFeed();
         if (!isActive) {
@@ -50,20 +44,56 @@ export function LiveDashboard() {
           error instanceof Error ? error.message : "Unable to load live feed.",
         );
       } finally {
-        if (isInitialLoad && isActive) {
+        if (isActive) {
           setFeedLoading(false);
         }
       }
     }
 
-    void loadFeed(true);
-    const intervalId = window.setInterval(() => {
-      void loadFeed();
-    }, FEED_POLL_INTERVAL_MS);
+    void loadFeed();
 
     return () => {
       isActive = false;
-      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const socket = new WebSocket(buildWebSocketUrl("/ws/live/feed/"));
+
+    socket.onmessage = (event) => {
+      const payload = JSON.parse(event.data) as {
+        type: string;
+        session: LiveSession;
+      };
+
+      setSessions((current) => {
+        if (payload.type === "session.started") {
+          const withoutDuplicate = current.filter(
+            (session) => session.id !== payload.session.id,
+          );
+          return [payload.session, ...withoutDuplicate];
+        }
+
+        if (payload.type === "session.updated") {
+          return current.map((session) =>
+            session.id === payload.session.id ? payload.session : session,
+          );
+        }
+
+        if (payload.type === "session.ended") {
+          return current.filter((session) => session.id !== payload.session.id);
+        }
+
+        return current;
+      });
+    };
+
+    socket.onerror = () => {
+      setFeedError("Live feed socket disconnected. Refresh to reconnect.");
+    };
+
+    return () => {
+      socket.close();
     };
   }, []);
 
@@ -169,7 +199,7 @@ export function LiveDashboard() {
         <div className="status-row">
           <h2 className="section-title">Active live feed</h2>
           <span className="muted">
-            {feedLoading ? "Loading..." : `Auto-refreshing every 5s • ${sessions.length} live now`}
+            {feedLoading ? "Loading..." : `Live updates enabled | ${sessions.length} live now`}
           </span>
         </div>
 
@@ -193,7 +223,7 @@ export function LiveDashboard() {
                   Cached viewers: {session.viewer_count_cached}
                 </p>
                 <p className="muted">
-                  {session.comment_count} comments • {session.heart_count} hearts
+                  {session.comment_count} comments | {session.heart_count} hearts
                 </p>
                 <Link className="button" href={`/live/${session.id}`}>
                   Join room
