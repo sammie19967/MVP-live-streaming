@@ -2,7 +2,12 @@ from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 from live.models import LiveSession
-from live.realtime import live_feed_group_name, live_session_group_name
+from live.realtime import (
+    broadcast_session_update,
+    live_feed_group_name,
+    live_session_group_name,
+)
+from django.db.models import F
 
 
 class FeedConsumer(AsyncJsonWebsocketConsumer):
@@ -38,11 +43,27 @@ class LiveRoomConsumer(AsyncJsonWebsocketConsumer):
             return
 
         await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.increment_viewer_count()
         await self.accept()
 
     async def disconnect(self, close_code):
         if hasattr(self, "group_name"):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
+            await self.decrement_viewer_count()
+
+    @database_sync_to_async
+    def increment_viewer_count(self):
+        LiveSession.objects.filter(id=self.session_id).update(
+            viewer_count_cached=F("viewer_count_cached") + 1
+        )
+        broadcast_session_update(self.session_id)
+
+    @database_sync_to_async
+    def decrement_viewer_count(self):
+        LiveSession.objects.filter(id=self.session_id).update(
+            viewer_count_cached=F("viewer_count_cached") - 1
+        )
+        broadcast_session_update(self.session_id)
 
     async def comment_created(self, event):
         await self.send_json(event["payload"])

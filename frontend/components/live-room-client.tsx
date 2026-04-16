@@ -350,7 +350,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
               </div>
               <div>
                 <dt>Engagement</dt>
-                <dd>{session.comment_count} comments | {session.heart_count} hearts</dd>
+                <dd>{session.viewer_count_cached} viewers | {session.comment_count} comments | {session.heart_count} hearts</dd>
               </div>
             </dl>
 
