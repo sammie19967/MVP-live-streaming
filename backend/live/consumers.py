@@ -1,6 +1,7 @@
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
+from django.core.cache import cache
 from live.models import LiveSession
 from live.realtime import (
     broadcast_session_update,
@@ -53,17 +54,45 @@ class LiveRoomConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def increment_viewer_count(self):
-        LiveSession.objects.filter(id=self.session_id).update(
-            viewer_count_cached=F("viewer_count_cached") + 1
-        )
-        broadcast_session_update(self.session_id)
+        user = self.scope.get("user")
+        if not user or not user.is_authenticated:
+            return
+
+        cache_key = f"presence_{self.session_id}_{user.id}"
+        # Increment connection count for this user in this session (TTL 2 hours)
+        new_count = cache.get(cache_key, 0) + 1
+        cache.set(cache_key, new_count, timeout=7200)
+
+        # If this is the first connection for this user, increment the global session count
+        if new_count == 1:
+            LiveSession.objects.filter(id=self.session_id).update(
+                viewer_count_cached=F("viewer_count_cached") + 1
+            )
+            broadcast_session_update(self.session_id)
 
     @database_sync_to_async
     def decrement_viewer_count(self):
-        LiveSession.objects.filter(id=self.session_id).update(
-            viewer_count_cached=F("viewer_count_cached") - 1
-        )
-        broadcast_session_update(self.session_id)
+        user = self.scope.get("user")
+        if not user or not user.is_authenticated:
+            return
+
+        cache_key = f"presence_{self.session_id}_{user.id}"
+        count = cache.get(cache_key, 0)
+        
+        if count <= 1:
+            cache.delete(cache_key)
+            # Only decrement if the user is truly leaving (last tab closed)
+            if count == 1:
+                # Ensure we don't go below 0
+                LiveSession.objects.filter(
+                    id=self.session_id, 
+                    viewer_count_cached__gt=0
+                ).update(
+                    viewer_count_cached=F("viewer_count_cached") - 1
+                )
+                broadcast_session_update(self.session_id)
+        else:
+            cache.set(cache_key, count - 1, timeout=7200)
 
     async def comment_created(self, event):
         await self.send_json(event["payload"])
