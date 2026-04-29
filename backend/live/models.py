@@ -24,6 +24,7 @@ class LiveSession(models.Model):
     livekit_room_name = models.CharField(max_length=255, unique=True, editable=False)
     started_at = models.DateTimeField(null=True, blank=True)
     ended_at = models.DateTimeField(null=True, blank=True)
+    viewer_count_live = models.PositiveIntegerField(default=0)
     viewer_count_cached = models.PositiveIntegerField(default=0)
     thumbnail_url = models.URLField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

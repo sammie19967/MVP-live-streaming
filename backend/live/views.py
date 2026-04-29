@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from django.conf import settings
+from django.db.models import Count, Q
 from django.utils import timezone
 from livekit import api as livekit_api
 from rest_framework import permissions, status
@@ -8,7 +9,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from live.models import Comment, LiveSession, Reaction
-from live.realtime import broadcast_feed_event, broadcast_room_event
+from live.realtime import (
+    broadcast_feed_event,
+    broadcast_room_event,
+    broadcast_session_update,
+)
 from live.serializers import (
     CommentSerializer,
     CreateCommentSerializer,
@@ -20,11 +25,26 @@ from live.serializers import (
 )
 
 
+def get_live_session_queryset():
+    return LiveSession.objects.select_related("creator", "creator__profile").annotate(
+        comment_count_annotated=Count(
+            "comments",
+            filter=Q(comments__is_deleted=False),
+            distinct=True,
+        ),
+        heart_count_annotated=Count(
+            "reactions",
+            filter=Q(reactions__type=Reaction.Type.HEART),
+            distinct=True,
+        ),
+    )
+
+
 class LiveFeedView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        sessions = LiveSession.objects.filter(status=LiveSession.Status.LIVE).select_related("creator", "creator__profile")
+        sessions = get_live_session_queryset().filter(status=LiveSession.Status.LIVE)
         return Response(LiveSessionSerializer(sessions, many=True).data)
 
 
@@ -32,7 +52,7 @@ class LiveSessionDetailView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, session_id):
-        session = LiveSession.objects.filter(id=session_id).select_related("creator", "creator__profile").first()
+        session = get_live_session_queryset().filter(id=session_id).first()
         if not session:
             return Response({"detail": "Live session not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(LiveSessionSerializer(session).data)
@@ -66,15 +86,7 @@ class StartLiveSessionView(APIView):
             started_at=timezone.now(),
         )
         session_data = LiveSessionSerializer(session).data
-        broadcast_feed_event(
-            "session.started",
-            {"type": "session.started", "session": session_data},
-        )
-        broadcast_room_event(
-            session.id,
-            "session.updated",
-            {"type": "session.updated", "session": session_data},
-        )
+        broadcast_session_update(session.id, event_type="session.started")
         return Response(session_data, status=status.HTTP_201_CREATED)
 
 
@@ -91,15 +103,7 @@ class LiveSessionEndView(APIView):
         session.ended_at = timezone.now()
         session.save(update_fields=["status", "ended_at"])
         session_data = LiveSessionSerializer(session).data
-        broadcast_feed_event(
-            "session.ended",
-            {"type": "session.ended", "session": session_data},
-        )
-        broadcast_room_event(
-            session.id,
-            "session.ended",
-            {"type": "session.ended", "session": session_data},
-        )
+        broadcast_session_update(session.id, event_type="session.ended")
         return Response(session_data)
 
 
@@ -110,6 +114,11 @@ class LiveSessionTokenView(APIView):
         session = LiveSession.objects.filter(id=session_id).select_related("creator").first()
         if not session:
             return Response({"detail": "Live session not found."}, status=status.HTTP_404_NOT_FOUND)
+        if session.status != LiveSession.Status.LIVE:
+            return Response(
+                {"detail": "Tokens are only issued for active live sessions."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         serializer = LiveTokenRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -175,21 +184,12 @@ class LiveCommentsView(APIView):
             body=serializer.validated_data["body"],
         )
         comment_data = CommentSerializer(comment).data
-        session_data = LiveSessionSerializer(session).data
         broadcast_room_event(
             session.id,
             "comment.created",
             {"type": "comment.created", "comment": comment_data},
         )
-        broadcast_room_event(
-            session.id,
-            "session.updated",
-            {"type": "session.updated", "session": session_data},
-        )
-        broadcast_feed_event(
-            "session.updated",
-            {"type": "session.updated", "session": session_data},
-        )
+        broadcast_session_update(session.id)
         return Response(comment_data, status=status.HTTP_201_CREATED)
 
 
@@ -214,7 +214,6 @@ class LiveReactionsView(APIView):
         )
         heart_count = session.reactions.filter(type=Reaction.Type.HEART).count()
         response_serializer = ReactionSerializer(reaction)
-        session_data = LiveSessionSerializer(session).data
         broadcast_room_event(
             session.id,
             "reaction.created",
@@ -224,15 +223,7 @@ class LiveReactionsView(APIView):
                 "heart_count": heart_count,
             },
         )
-        broadcast_room_event(
-            session.id,
-            "session.updated",
-            {"type": "session.updated", "session": session_data},
-        )
-        broadcast_feed_event(
-            "session.updated",
-            {"type": "session.updated", "session": session_data},
-        )
+        broadcast_session_update(session.id)
         return Response(
             {
                 "created": created,

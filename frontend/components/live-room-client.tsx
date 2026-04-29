@@ -10,8 +10,8 @@ import {
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import {
@@ -68,7 +68,6 @@ function Stage() {
 }
 
 export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { token, user } = useAuth();
   const [session, setSession] = useState<LiveSession | null>(null);
@@ -80,6 +79,8 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
   const [commentBody, setCommentBody] = useState("");
   const [commentSubmitting, setCommentSubmitting] = useState(false);
   const [heartSubmitting, setHeartSubmitting] = useState(false);
+  const [liveEndedMessage, setLiveEndedMessage] = useState<string | null>(null);
+  const roomSocketRef = useRef<WebSocket | null>(null);
 
   const requestedRole = searchParams.get("role") === "creator" ? "creator" : "viewer";
   const resolvedRole = useMemo(() => {
@@ -114,6 +115,9 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
         }
         setSession(sessionData);
         setLivekit(tokenData);
+        if (sessionData.status === "ended") {
+          setLiveEndedMessage("This live has ended.");
+        }
       } catch (loadError) {
         if (!isActive) {
           return;
@@ -171,13 +175,14 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
   }, [session, sessionId, token]);
 
   useEffect(() => {
-    if (!token || !session) {
+    if (!token || !session || session.status === "ended" || liveEndedMessage) {
       return;
     }
 
     const socket = new WebSocket(
       buildWebSocketUrl(`/ws/live/sessions/${sessionId}/`, token),
     );
+    roomSocketRef.current = socket;
 
     socket.onmessage = (event) => {
       const payload = JSON.parse(event.data) as
@@ -199,9 +204,9 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
         setSession((current) =>
           current
             ? {
-                ...current,
-                heart_count: payload.heart_count,
-              }
+              ...current,
+              heart_count: payload.heart_count,
+            }
             : current,
         );
         return;
@@ -214,23 +219,26 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
 
       if (payload.type === "session.ended") {
         setSession(payload.session);
-        router.push("/");
-        router.refresh();
+        setLiveEndedMessage("This live has ended.");
+        socket.close();
       }
     };
 
     socket.onerror = () => {
-      setError("Room socket disconnected. Refresh to reconnect.");
+      if (!liveEndedMessage) {
+        setError("Room socket disconnected. Refresh to reconnect.");
+      }
     };
 
     return () => {
+      roomSocketRef.current = null;
       socket.close();
     };
-  }, [router, session, sessionId, token]);
+  }, [liveEndedMessage, session, sessionId, token]);
 
   async function handleCommentSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!token || !commentBody.trim()) {
+    if (!token || !commentBody.trim() || session?.status === "ended") {
       return;
     }
 
@@ -252,7 +260,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
   }
 
   async function handleHeart() {
-    if (!token) {
+    if (!token || session?.status === "ended") {
       return;
     }
 
@@ -282,8 +290,17 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
 
     try {
       await endLiveSession(token, session.id);
-      router.push("/");
-      router.refresh();
+      setSession((current) =>
+        current
+          ? {
+            ...current,
+            status: "ended",
+            ended_at: new Date().toISOString(),
+          }
+          : current,
+      );
+      setLiveEndedMessage("You ended this live.");
+      roomSocketRef.current?.close();
     } catch (endError) {
       setError(
         endError instanceof Error
@@ -350,28 +367,45 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
               </div>
               <div>
                 <dt>Engagement</dt>
-                <dd>{session.viewer_count_cached} viewers | {session.comment_count} comments | {session.heart_count} hearts</dd>
+                <dd>{session.viewer_count_live} watching | {session.viewer_count_cached} total views | {session.comment_count} comments | {session.heart_count} hearts</dd>
               </div>
             </dl>
 
             <div className="inline-actions">
-              <button className="button" disabled={heartSubmitting} onClick={() => void handleHeart()} type="button">
+              <button
+                className="button"
+                disabled={heartSubmitting || session.status === "ended"}
+                onClick={() => void handleHeart()}
+                type="button"
+              >
                 {heartSubmitting ? "Sending..." : `Send heart (${session.heart_count})`}
               </button>
             </div>
           </section>
 
           <section className="panel stack">
-            <LiveKitRoom
-              audio={resolvedRole === "creator"}
-              video={resolvedRole === "creator"}
-              connect
-              data-lk-theme="default"
-              serverUrl={livekit.livekit_url}
-              token={livekit.token}
-            >
-              <Stage />
-            </LiveKitRoom>
+            {session.status === "ended" || liveEndedMessage ? (
+              <div className="empty-stage">
+                <h2 className="section-title">Live has ended</h2>
+                <p className="section-copy">
+                  {liveEndedMessage ?? "This live session is no longer active."}
+                </p>
+                <Link className="button" href="/">
+                  Back to feed
+                </Link>
+              </div>
+            ) : (
+              <LiveKitRoom
+                audio={resolvedRole === "creator"}
+                video={resolvedRole === "creator"}
+                connect
+                data-lk-theme="default"
+                serverUrl={livekit.livekit_url}
+                token={livekit.token}
+              >
+                <Stage />
+              </LiveKitRoom>
+            )}
           </section>
 
           <aside className="panel stack comments-panel">
@@ -388,10 +422,15 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
                   maxLength={500}
                   onChange={(event) => setCommentBody(event.target.value)}
                   placeholder="Say something in the stream..."
+                  disabled={session.status === "ended"}
                   value={commentBody}
                 />
               </div>
-              <button className="button" disabled={commentSubmitting || !commentBody.trim()} type="submit">
+              <button
+                className="button"
+                disabled={commentSubmitting || !commentBody.trim() || session.status === "ended"}
+                type="submit"
+              >
                 {commentSubmitting ? "Posting..." : "Send comment"}
               </button>
             </form>

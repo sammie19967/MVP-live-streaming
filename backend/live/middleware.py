@@ -24,9 +24,30 @@ class TokenAuthMiddleware:
 
     async def __call__(self, scope, receive, send):
         query_params = parse_qs(scope["query_string"].decode())
-        token_key = query_params.get("token", [None])[0]
+        token_key = self._get_token_from_headers(scope) or query_params.get("token", [None])[0]
         scope["user"] = await get_user_for_token(token_key)
         return await self.app(scope, receive, send)
+
+    def _get_token_from_headers(self, scope):
+        for header_name, header_value in scope.get("headers", []):
+            if header_name != b"authorization":
+                continue
+
+            try:
+                decoded_value = header_value.decode("utf-8")
+            except UnicodeDecodeError:
+                return None
+
+            parts = decoded_value.split()
+            if len(parts) != 2:
+                return None
+
+            scheme, token = parts
+            if scheme.lower() not in {"token", "bearer"}:
+                return None
+            return token
+
+        return None
 
 
 def TokenAuthMiddlewareStack(inner):

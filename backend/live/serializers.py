@@ -19,6 +19,7 @@ class LiveSessionSerializer(serializers.ModelSerializer):
             "livekit_room_name",
             "started_at",
             "ended_at",
+            "viewer_count_live",
             "viewer_count_cached",
             "thumbnail_url",
             "created_at",
@@ -27,9 +28,15 @@ class LiveSessionSerializer(serializers.ModelSerializer):
         ]
 
     def get_comment_count(self, obj):
+        annotated_count = getattr(obj, "comment_count_annotated", None)
+        if annotated_count is not None:
+            return annotated_count
         return obj.comments.filter(is_deleted=False).count()
 
     def get_heart_count(self, obj):
+        annotated_count = getattr(obj, "heart_count_annotated", None)
+        if annotated_count is not None:
+            return annotated_count
         return obj.reactions.filter(type=Reaction.Type.HEART).count()
 
 
