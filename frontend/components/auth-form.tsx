@@ -17,6 +17,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
   const { login, register } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,7 +96,23 @@ export function AuthForm({ mode }: AuthFormProps) {
 
         <div className="field">
           <label htmlFor="password">Password</label>
-          <input id="password" name="password" type="password" required />
+          <div className="password-field">
+            <input
+              id="password"
+              name="password"
+              type={isPasswordVisible ? "text" : "password"}
+              required
+            />
+            <button
+              aria-label={isPasswordVisible ? "Hide password" : "Show password"}
+              className="password-toggle"
+              onClick={() => setIsPasswordVisible((visible) => !visible)}
+              title={isPasswordVisible ? "Hide password" : "Show password"}
+              type="button"
+            >
+              {isPasswordVisible ? <EyeOffIcon /> : <EyeIcon />}
+            </button>
+          </div>
         </div>
 
         {mode === "register" ? (
@@ -131,5 +148,75 @@ export function AuthForm({ mode }: AuthFormProps) {
         </Link>
       </p>
     </section>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="20"
+      viewBox="0 0 24 24"
+      width="20"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="20"
+      viewBox="0 0 24 24"
+      width="20"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="m3 3 18 18"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M9.9 5.4A9.7 9.7 0 0 1 12 5c6.2 0 9.5 7 9.5 7a14.2 14.2 0 0 1-3 4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M14.1 14.3a3.2 3.2 0 0 1-4.4-4.4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M6.6 6.8C3.9 8.6 2.5 12 2.5 12s3.3 7 9.5 7c1.4 0 2.7-.4 3.8-1"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
   );
 }

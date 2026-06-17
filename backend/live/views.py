@@ -1,4 +1,5 @@
 from datetime import timedelta
+from urllib.parse import urlsplit, urlunsplit
 
 from django.conf import settings
 from django.db.models import Count, Q
@@ -23,6 +24,30 @@ from live.serializers import (
     ReactionSerializer,
     StartLiveSessionSerializer,
 )
+
+
+def get_client_livekit_url(request):
+    livekit_url = settings.LIVEKIT_URL
+    parsed_url = urlsplit(livekit_url)
+
+    if parsed_url.hostname not in {"localhost", "127.0.0.1"}:
+        return livekit_url
+
+    request_host = request.get_host().split(":")[0]
+    if request_host in {"localhost", "127.0.0.1"}:
+        return livekit_url
+
+    livekit_port = parsed_url.port or 7880
+    netloc = f"{request_host}:{livekit_port}"
+    return urlunsplit(
+        (
+            parsed_url.scheme or "ws",
+            netloc,
+            parsed_url.path,
+            parsed_url.query,
+            parsed_url.fragment,
+        )
+    )
 
 
 def get_live_session_queryset():
@@ -148,7 +173,7 @@ class LiveSessionTokenView(APIView):
         return Response(
             {
                 "token": token.to_jwt(),
-                "livekit_url": settings.LIVEKIT_URL,
+                "livekit_url": get_client_livekit_url(request),
                 "room_name": session.livekit_room_name,
                 "role": role,
             }

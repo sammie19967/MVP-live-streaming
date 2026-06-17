@@ -83,6 +83,8 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
   const roomSocketRef = useRef<WebSocket | null>(null);
 
   const requestedRole = searchParams.get("role") === "creator" ? "creator" : "viewer";
+  const activeSessionId = session?.id;
+  const activeSessionStatus = session?.status;
   const resolvedRole = useMemo(() => {
     if (requestedRole === "creator") {
       return "creator";
@@ -106,13 +108,20 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
       }
 
       try {
-        const [sessionData, tokenData] = await Promise.all([
-          getLiveSession(sessionId),
-          getLiveToken(token, sessionId, requestedRole),
-        ]);
+        const sessionData = await getLiveSession(sessionId);
         if (!isActive) {
           return;
         }
+
+        const tokenRole =
+          requestedRole === "creator" || sessionData.creator.id === user?.id
+            ? "creator"
+            : "viewer";
+        const tokenData = await getLiveToken(token, sessionId, tokenRole);
+        if (!isActive) {
+          return;
+        }
+
         setSession(sessionData);
         setLivekit(tokenData);
         if (sessionData.status === "ended") {
@@ -138,10 +147,10 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
     return () => {
       isActive = false;
     };
-  }, [requestedRole, sessionId, token]);
+  }, [requestedRole, sessionId, token, user?.id]);
 
   useEffect(() => {
-    if (!token || !session) {
+    if (!token || !activeSessionId) {
       return;
     }
 
@@ -172,10 +181,15 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
     return () => {
       isActive = false;
     };
-  }, [session, sessionId, token]);
+  }, [activeSessionId, sessionId, token]);
 
   useEffect(() => {
-    if (!token || !session || session.status === "ended" || liveEndedMessage) {
+    if (
+      !token ||
+      !activeSessionId ||
+      activeSessionStatus === "ended" ||
+      liveEndedMessage
+    ) {
       return;
     }
 
@@ -234,7 +248,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
       roomSocketRef.current = null;
       socket.close();
     };
-  }, [liveEndedMessage, session, sessionId, token]);
+  }, [activeSessionId, activeSessionStatus, liveEndedMessage, sessionId, token]);
 
   async function handleCommentSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
