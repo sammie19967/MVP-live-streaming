@@ -83,13 +83,9 @@ class LiveRoomConsumer(AsyncJsonWebsocketConsumer):
 
         if new_presence_count == 1:
             LiveSession.objects.filter(id=self.session_id).update(
-                viewer_count_live=F("viewer_count_live") + 1
+                viewer_count_live=F("viewer_count_live") + 1,
+                total_view_count=F("total_view_count") + 1
             )
-
-            if cache.add(joined_key, 1, timeout=None):
-                LiveSession.objects.filter(id=self.session_id).update(
-                    viewer_count_cached=F("viewer_count_cached") + 1
-                )
 
             broadcast_session_update(self.session_id)
 

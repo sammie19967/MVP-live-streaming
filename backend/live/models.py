@@ -25,8 +25,8 @@ class LiveSession(models.Model):
     started_at = models.DateTimeField(null=True, blank=True)
     ended_at = models.DateTimeField(null=True, blank=True)
     viewer_count_live = models.PositiveIntegerField(default=0)
-    viewer_count_cached = models.PositiveIntegerField(default=0)
-    thumbnail_url = models.URLField(blank=True)
+    total_view_count = models.PositiveIntegerField(default=0)
+    thumbnail = models.FileField(upload_to="thumbnails/", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -51,6 +51,13 @@ class Comment(models.Model):
         related_name="live_comments",
     )
     body = models.TextField(max_length=500)
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="replies",
+    )
     is_deleted = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 

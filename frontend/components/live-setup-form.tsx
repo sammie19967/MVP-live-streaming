@@ -22,10 +22,13 @@ export function LiveSetupForm() {
     setError(null);
 
     try {
-      const session = await startLiveSession(token, {
-        title: String(formData.get("title") || ""),
-        thumbnail_url: String(formData.get("thumbnail_url") || ""),
-      });
+      const payload = new FormData();
+      payload.append("title", String(formData.get("title") || ""));
+      const thumbnailFile = formData.get("thumbnail");
+      if (thumbnailFile && thumbnailFile instanceof File && thumbnailFile.size > 0) {
+        payload.append("thumbnail", thumbnailFile);
+      }
+      const session = await startLiveSession(token, payload);
       router.push(`/live/${session.id}?role=creator`);
     } catch (submitError) {
       setError(
@@ -76,11 +79,12 @@ export function LiveSetupForm() {
           </div>
 
           <div className="field">
-            <label htmlFor="thumbnail_url">Thumbnail URL</label>
+            <label htmlFor="thumbnail">Thumbnail</label>
             <input
-              id="thumbnail_url"
-              name="thumbnail_url"
-              placeholder="https://example.com/thumb.jpg"
+              id="thumbnail"
+              name="thumbnail"
+              type="file"
+              accept="image/*"
             />
           </div>
 

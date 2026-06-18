@@ -80,7 +80,9 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
   const [commentSubmitting, setCommentSubmitting] = useState(false);
   const [heartSubmitting, setHeartSubmitting] = useState(false);
   const [liveEndedMessage, setLiveEndedMessage] = useState<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
   const roomSocketRef = useRef<WebSocket | null>(null);
+  const commentInputRef = useRef<HTMLInputElement | null>(null);
 
   const requestedRole = searchParams.get("role") === "creator" ? "creator" : "viewer";
   const activeSessionId = session?.id;
@@ -250,6 +252,19 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
     };
   }, [activeSessionId, activeSessionStatus, liveEndedMessage, sessionId, token]);
 
+  function handleReply(comment: Comment) {
+    // Always reply to the root-level comment
+    const target = comment.parent_id
+      ? (comments.find((c) => c.id === comment.parent_id) ?? comment)
+      : comment;
+    setReplyingTo(target);
+    setTimeout(() => commentInputRef.current?.focus(), 50);
+  }
+
+  function cancelReply() {
+    setReplyingTo(null);
+  }
+
   async function handleCommentSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token || !commentBody.trim() || session?.status === "ended") {
@@ -260,8 +275,9 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
     setError(null);
 
     try {
-      await postLiveComment(token, sessionId, commentBody.trim());
+      await postLiveComment(token, sessionId, commentBody.trim(), replyingTo?.id ?? null);
       setCommentBody("");
+      setReplyingTo(null);
     } catch (submitError) {
       setError(
         submitError instanceof Error
@@ -381,7 +397,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
               </div>
               <div>
                 <dt>Engagement</dt>
-                <dd>{session.viewer_count_live} watching | {session.viewer_count_cached} total views | {session.comment_count} comments | {session.heart_count} hearts</dd>
+                <dd>{session.viewer_count_live} watching | {session.total_view_count} total views | {session.comment_count} comments | {session.heart_count} hearts</dd>
               </div>
             </dl>
 
@@ -429,13 +445,35 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
             </div>
 
             <form className="stack" onSubmit={handleCommentSubmit}>
+              {replyingTo && (
+                <div className="reply-banner">
+                  <span>
+                    Replying to{" "}
+                    <strong>
+                      {replyingTo.user.profile.display_name || replyingTo.user.username}
+                    </strong>
+                  </span>
+                  <button
+                    className="reply-banner__cancel"
+                    onClick={cancelReply}
+                    type="button"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
               <div className="field">
                 <label htmlFor="comment">Comment</label>
                 <input
                   id="comment"
+                  ref={commentInputRef}
                   maxLength={500}
                   onChange={(event) => setCommentBody(event.target.value)}
-                  placeholder="Say something in the stream..."
+                  placeholder={
+                    replyingTo
+                      ? `Reply to ${replyingTo.user.profile.display_name || replyingTo.user.username}...`
+                      : "Say something in the stream..."
+                  }
                   disabled={session.status === "ended"}
                   value={commentBody}
                 />
@@ -445,28 +483,84 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
                 disabled={commentSubmitting || !commentBody.trim() || session.status === "ended"}
                 type="submit"
               >
-                {commentSubmitting ? "Posting..." : "Send comment"}
+                {commentSubmitting ? "Posting..." : replyingTo ? "Reply" : "Send comment"}
               </button>
             </form>
 
             <div className="comment-list">
               {comments.length ? (
-                comments.map((comment) => (
-                  <article className="comment-card" key={comment.id}>
-                    <div className="comment-card__meta">
-                      <strong>
-                        {comment.user.profile.display_name || comment.user.username}
-                      </strong>
-                      <span className="muted">
-                        {new Intl.DateTimeFormat(undefined, {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        }).format(new Date(comment.created_at))}
-                      </span>
-                    </div>
-                    <p>{comment.body}</p>
-                  </article>
-                ))
+                (() => {
+                  const rootComments = comments.filter((c) => !c.parent_id);
+                  const repliesByParent = new Map<number, Comment[]>();
+                  for (const c of comments) {
+                    if (c.parent_id) {
+                      const list = repliesByParent.get(c.parent_id) ?? [];
+                      list.push(c);
+                      repliesByParent.set(c.parent_id, list);
+                    }
+                  }
+
+                  return rootComments.map((comment) => {
+                    const replies = repliesByParent.get(comment.id) ?? [];
+                    return (
+                      <div className="comment-thread" key={comment.id}>
+                        <article className="comment-card">
+                          <div className="comment-card__meta">
+                            <strong>
+                              {comment.user.profile.display_name || comment.user.username}
+                            </strong>
+                            <span className="muted">
+                              {new Intl.DateTimeFormat(undefined, {
+                                hour: "numeric",
+                                minute: "2-digit",
+                              }).format(new Date(comment.created_at))}
+                            </span>
+                          </div>
+                          <p>{comment.body}</p>
+                          {session.status !== "ended" && (
+                            <button
+                              className="reply-btn"
+                              onClick={() => handleReply(comment)}
+                              type="button"
+                            >
+                              Reply
+                            </button>
+                          )}
+                        </article>
+
+                        {replies.length > 0 && (
+                          <div className="comment-replies">
+                            {replies.map((reply) => (
+                              <article className="comment-card comment-card--reply" key={reply.id}>
+                                <div className="comment-card__meta">
+                                  <strong>
+                                    {reply.user.profile.display_name || reply.user.username}
+                                  </strong>
+                                  <span className="muted">
+                                    {new Intl.DateTimeFormat(undefined, {
+                                      hour: "numeric",
+                                      minute: "2-digit",
+                                    }).format(new Date(reply.created_at))}
+                                  </span>
+                                </div>
+                                <p>{reply.body}</p>
+                                {session.status !== "ended" && (
+                                  <button
+                                    className="reply-btn"
+                                    onClick={() => handleReply(reply)}
+                                    type="button"
+                                  >
+                                    Reply
+                                  </button>
+                                )}
+                              </article>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()
               ) : (
                 <div className="empty-stage">
                   <h3 className="section-title">No comments yet</h3>

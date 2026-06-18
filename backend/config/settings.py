@@ -145,3 +145,6 @@ CACHES = {
 LIVEKIT_API_KEY = os.getenv('LIVEKIT_API_KEY', 'devkey')
 LIVEKIT_API_SECRET = os.getenv('LIVEKIT_API_SECRET', 'secret')
 LIVEKIT_URL = os.getenv('LIVEKIT_URL', 'ws://localhost:7880')
+
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"

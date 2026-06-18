@@ -211,6 +211,13 @@ export function LiveDashboard() {
           <div className="session-grid">
             {sessions.map((session) => (
               <article className="session-card" key={session.id}>
+                {session.thumbnail ? (
+                  <div className="session-card__thumbnail">
+                    <img src={session.thumbnail} alt={session.title} />
+                  </div>
+                ) : (
+                  <div className="session-card__thumbnail placeholder-gradient" />
+                )}
                 <div className="session-card__meta">
                   <span className="session-badge">LIVE</span>
                   <span className="muted">{formatStartedAt(session.started_at)}</span>
@@ -220,7 +227,7 @@ export function LiveDashboard() {
                   by {session.creator.profile.display_name || session.creator.username}
                 </p>
                 <p className="muted">
-                  Cached viewers: {session.viewer_count_cached}
+                  Live viewers: {session.viewer_count_live} | Total views: {session.total_view_count}
                 </p>
                 <p className="muted">
                   {session.comment_count} comments | {session.heart_count} hearts

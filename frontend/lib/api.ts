@@ -27,8 +27,9 @@ export type LiveSession = {
   livekit_room_name: string;
   started_at: string | null;
   ended_at: string | null;
-  viewer_count_cached: number;
-  thumbnail_url: string;
+  viewer_count_live: number;
+  total_view_count: number;
+  thumbnail: string | null;
   created_at: string;
   comment_count: number;
   heart_count: number;
@@ -46,6 +47,7 @@ export type Comment = {
   session: number;
   user: User;
   body: string;
+  parent_id: number | null;
   is_deleted: boolean;
   created_at: string;
 };
@@ -160,15 +162,14 @@ export async function getLiveSession(sessionId: string | number) {
 
 export async function startLiveSession(
   token: string,
-  payload: { title: string; thumbnail_url?: string },
+  payload: FormData,
 ) {
   const response = await fetch(`${API_BASE_URL}/api/live/start`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
       Authorization: `Token ${token}`,
     },
-    body: JSON.stringify(payload),
+    body: payload,
   });
 
   return parseResponse<LiveSession>(response);
@@ -217,6 +218,7 @@ export async function postLiveComment(
   token: string,
   sessionId: string | number,
   body: string,
+  parentId?: number | null,
 ) {
   const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/comments`, {
     method: "POST",
@@ -224,7 +226,7 @@ export async function postLiveComment(
       "Content-Type": "application/json",
       Authorization: `Token ${token}`,
     },
-    body: JSON.stringify({ body }),
+    body: JSON.stringify({ body, ...(parentId != null ? { parent_id: parentId } : {}) }),
   });
 
   return parseResponse<Comment>(response);

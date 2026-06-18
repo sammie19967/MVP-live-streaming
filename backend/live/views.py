@@ -5,7 +5,7 @@ from django.conf import settings
 from django.db.models import Count, Q
 from django.utils import timezone
 from livekit import api as livekit_api
-from rest_framework import permissions, status
+from rest_framework import parsers, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -70,7 +70,7 @@ class LiveFeedView(APIView):
 
     def get(self, request):
         sessions = get_live_session_queryset().filter(status=LiveSession.Status.LIVE)
-        return Response(LiveSessionSerializer(sessions, many=True).data)
+        return Response(LiveSessionSerializer(sessions, many=True, context={"request": request}).data)
 
 
 class LiveSessionDetailView(APIView):
@@ -80,11 +80,12 @@ class LiveSessionDetailView(APIView):
         session = get_live_session_queryset().filter(id=session_id).first()
         if not session:
             return Response({"detail": "Live session not found."}, status=status.HTTP_404_NOT_FOUND)
-        return Response(LiveSessionSerializer(session).data)
+        return Response(LiveSessionSerializer(session, context={"request": request}).data)
 
 
 class StartLiveSessionView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [parsers.JSONParser, parsers.MultiPartParser, parsers.FormParser]
 
     def post(self, request):
         serializer = StartLiveSessionSerializer(data=request.data)
@@ -98,7 +99,7 @@ class StartLiveSessionView(APIView):
             return Response(
                 {
                     "detail": "Creator already has an active live session.",
-                    "session": LiveSessionSerializer(existing_session).data,
+                    "session": LiveSessionSerializer(existing_session, context={"request": request}).data,
                 },
                 status=status.HTTP_409_CONFLICT,
             )
@@ -106,11 +107,11 @@ class StartLiveSessionView(APIView):
         session = LiveSession.objects.create(
             creator=request.user,
             title=serializer.validated_data["title"],
-            thumbnail_url=serializer.validated_data.get("thumbnail_url", ""),
+            thumbnail=serializer.validated_data.get("thumbnail"),
             status=LiveSession.Status.LIVE,
             started_at=timezone.now(),
         )
-        session_data = LiveSessionSerializer(session).data
+        session_data = LiveSessionSerializer(session, context={"request": request}).data
         broadcast_session_update(session.id, event_type="session.started")
         return Response(session_data, status=status.HTTP_201_CREATED)
 
@@ -127,7 +128,7 @@ class LiveSessionEndView(APIView):
         session.status = LiveSession.Status.ENDED
         session.ended_at = timezone.now()
         session.save(update_fields=["status", "ended_at"])
-        session_data = LiveSessionSerializer(session).data
+        session_data = LiveSessionSerializer(session, context={"request": request}).data
         broadcast_session_update(session.id, event_type="session.ended")
         return Response(session_data)
 
@@ -160,12 +161,14 @@ class LiveSessionTokenView(APIView):
             .with_identity(str(request.user.id))
             .with_name(request.user.username)
             .with_grants(
-                livekit_api.VideoGrants(
-                    room_join=True,
-                    room=session.livekit_room_name,
-                    can_publish=role == "creator",
-                    can_subscribe=True,
-                )
+            livekit_api.VideoGrants(
+                room_join=True,
+                room=session.livekit_room_name,
+                can_publish=role == "creator",
+                can_publish_data=role == "creator",
+                can_publish_sources=(["camera", "microphone"] if role == "creator" else None),
+                can_subscribe=True,
+            )
             )
             .with_ttl(timedelta(hours=2))
         )
@@ -203,10 +206,22 @@ class LiveCommentsView(APIView):
 
         serializer = CreateCommentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
+        parent = None
+        parent_id = serializer.validated_data.get("parent_id")
+        if parent_id is not None:
+            try:
+                parent_comment = Comment.objects.get(id=parent_id, session=session, is_deleted=False)
+                # Flatten to 1 level: always point to the root comment
+                parent = parent_comment.parent if parent_comment.parent_id else parent_comment
+            except Comment.DoesNotExist:
+                return Response({"detail": "Parent comment not found in this session."}, status=status.HTTP_400_BAD_REQUEST)
+
         comment = Comment.objects.create(
             session=session,
             user=request.user,
             body=serializer.validated_data["body"],
+            parent=parent,
         )
         comment_data = CommentSerializer(comment).data
         broadcast_room_event(

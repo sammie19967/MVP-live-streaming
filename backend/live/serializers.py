@@ -20,8 +20,8 @@ class LiveSessionSerializer(serializers.ModelSerializer):
             "started_at",
             "ended_at",
             "viewer_count_live",
-            "viewer_count_cached",
-            "thumbnail_url",
+            "total_view_count",
+            "thumbnail",
             "created_at",
             "comment_count",
             "heart_count",
@@ -42,7 +42,7 @@ class LiveSessionSerializer(serializers.ModelSerializer):
 
 class StartLiveSessionSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255)
-    thumbnail_url = serializers.URLField(required=False, allow_blank=True)
+    thumbnail = serializers.FileField(required=False, allow_null=True)
 
 
 class LiveTokenRequestSerializer(serializers.Serializer):
@@ -51,15 +51,23 @@ class LiveTokenRequestSerializer(serializers.Serializer):
 
 class CommentSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
+    parent_id = serializers.PrimaryKeyRelatedField(
+        queryset=Comment.objects.all(),
+        source="parent",
+        required=False,
+        allow_null=True,
+        write_only=False,
+    )
 
     class Meta:
         model = Comment
-        fields = ["id", "session", "user", "body", "is_deleted", "created_at"]
+        fields = ["id", "session", "user", "body", "parent_id", "is_deleted", "created_at"]
         read_only_fields = ["id", "session", "user", "is_deleted", "created_at"]
 
 
 class CreateCommentSerializer(serializers.Serializer):
     body = serializers.CharField(max_length=500)
+    parent_id = serializers.IntegerField(required=False, allow_null=True)
 
 
 class ReactionSerializer(serializers.ModelSerializer):
