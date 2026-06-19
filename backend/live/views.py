@@ -69,7 +69,10 @@ class LiveFeedView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        sessions = get_live_session_queryset().filter(status=LiveSession.Status.LIVE)
+        status_filter = request.query_params.get("status", LiveSession.Status.LIVE)
+        if status_filter not in LiveSession.Status.values:
+            status_filter = LiveSession.Status.LIVE
+        sessions = get_live_session_queryset().filter(status=status_filter)
         return Response(LiveSessionSerializer(sessions, many=True, context={"request": request}).data)
 
 
@@ -127,7 +130,8 @@ class LiveSessionEndView(APIView):
             return Response({"detail": "Only the creator can end this live session."}, status=status.HTTP_403_FORBIDDEN)
         session.status = LiveSession.Status.ENDED
         session.ended_at = timezone.now()
-        session.save(update_fields=["status", "ended_at"])
+        session.viewer_count_live = 0
+        session.save(update_fields=["status", "ended_at", "viewer_count_live"])
         session_data = LiveSessionSerializer(session, context={"request": request}).data
         broadcast_session_update(session.id, event_type="session.ended")
         return Response(session_data)
@@ -211,9 +215,7 @@ class LiveCommentsView(APIView):
         parent_id = serializer.validated_data.get("parent_id")
         if parent_id is not None:
             try:
-                parent_comment = Comment.objects.get(id=parent_id, session=session, is_deleted=False)
-                # Flatten to 1 level: always point to the root comment
-                parent = parent_comment.parent if parent_comment.parent_id else parent_comment
+                parent = Comment.objects.get(id=parent_id, session=session, is_deleted=False)
             except Comment.DoesNotExist:
                 return Response({"detail": "Parent comment not found in this session."}, status=status.HTTP_400_BAD_REQUEST)
 

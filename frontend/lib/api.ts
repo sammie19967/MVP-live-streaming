@@ -33,6 +33,7 @@ export type LiveSession = {
   created_at: string;
   comment_count: number;
   heart_count: number;
+  duration_seconds: number | null;
 };
 
 export type LiveTokenResponse = {
@@ -64,7 +65,7 @@ export type LoginPayload = {
   password: string;
 };
 
-const API_BASE_URL =
+export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 const WS_BASE_URL =
   process.env.NEXT_PUBLIC_WS_BASE_URL ?? deriveWebSocketBaseUrl(API_BASE_URL);
@@ -144,8 +145,8 @@ export async function getCurrentUser(token: string) {
   return parseResponse<User>(response);
 }
 
-export async function getLiveFeed() {
-  const response = await fetch(`${API_BASE_URL}/api/live/feed`, {
+export async function getLiveFeed(status: string = "live") {
+  const response = await fetch(`${API_BASE_URL}/api/live/feed?status=${status}`, {
     cache: "no-store",
   });
 
@@ -256,4 +257,13 @@ export function buildWebSocketUrl(path: string, token?: string | null) {
     url.searchParams.set("token", token);
   }
   return url.toString();
+}
+
+export function getMediaUrl(url: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return url;
+  }
+  const cleanUrl = url.startsWith("/") ? url : `/${url}`;
+  return `${API_BASE_URL}${cleanUrl}`;
 }

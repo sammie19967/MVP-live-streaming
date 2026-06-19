@@ -91,6 +91,41 @@ class LiveSessionTests(APITestCase):
         self.assertEqual(response.data["body"], "Hello streamer")
         self.assertTrue(Comment.objects.filter(session=session, user=self.viewer).exists())
 
+    def test_nested_replies_do_not_flatten(self):
+        session = LiveSession.objects.create(
+            creator=self.creator,
+            title="Nested comments live",
+            status=LiveSession.Status.LIVE,
+        )
+        # Create root comment
+        root_comment = Comment.objects.create(
+            session=session,
+            user=self.creator,
+            body="Root comment",
+        )
+        # Create reply level 1
+        reply_1 = Comment.objects.create(
+            session=session,
+            user=self.viewer,
+            body="Reply 1",
+            parent=root_comment,
+        )
+
+        # Authenticate and post reply level 2 (replying to reply 1)
+        self.client.force_authenticate(user=self.viewer)
+        response = self.client.post(
+            f"/api/live/{session.id}/comments",
+            {"body": "Reply 2", "parent_id": reply_1.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["parent_id"], reply_1.id)
+        
+        # Verify it wasn't flattened to root_comment
+        reply_2_db = Comment.objects.get(id=response.data["id"])
+        self.assertEqual(reply_2_db.parent_id, reply_1.id)
+
     def test_authenticated_user_can_send_heart_reaction(self):
         session = LiveSession.objects.create(
             creator=self.creator,
@@ -137,6 +172,48 @@ class LiveSessionTests(APITestCase):
         self.assertEqual(response.data["comment_count"], 1)
         self.assertEqual(response.data["heart_count"], 1)
 
+    def test_feed_can_be_filtered_by_status(self):
+        # Create active sessions
+        LiveSession.objects.create(
+            creator=self.creator,
+            title="Active 1",
+            status=LiveSession.Status.LIVE,
+        )
+        # Create ended sessions
+        LiveSession.objects.create(
+            creator=self.creator,
+            title="Ended 1",
+            status=LiveSession.Status.ENDED,
+        )
+
+        # Query active feed (default)
+        response = self.client.get("/api/live/feed")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(all(item["status"] == "live" for item in response.data))
+
+        # Query ended feed
+        response = self.client.get("/api/live/feed?status=ended")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(all(item["status"] == "ended" for item in response.data))
+        self.assertTrue(any(item["title"] == "Ended 1" for item in response.data))
+
+    def test_ending_live_session_resets_viewer_count_to_zero(self):
+        session = LiveSession.objects.create(
+            creator=self.creator,
+            title="Session to End",
+            status=LiveSession.Status.LIVE,
+            viewer_count_live=15,
+        )
+        self.client.force_authenticate(user=self.creator)
+
+        response = self.client.post(f"/api/live/{session.id}/end")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        session.refresh_from_db()
+        self.assertEqual(session.status, LiveSession.Status.ENDED)
+        self.assertEqual(session.viewer_count_live, 0)
+        self.assertEqual(response.data["viewer_count_live"], 0)
+
 
 class TokenAuthMiddlewareTests(SimpleTestCase):
     def test_extracts_bearer_token_from_headers(self):
@@ -182,3 +259,24 @@ class LiveSessionSerializerTests(APITestCase):
 
         self.assertEqual(data["comment_count"], 7)
         self.assertEqual(data["heart_count"], 9)
+
+    def test_serializer_computes_duration_seconds(self):
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        creator = User.objects.create_user(
+            username="duration-streamer",
+            email="duration-streamer@example.com",
+            password="supersecret123",
+        )
+        now = timezone.now()
+        session = LiveSession.objects.create(
+            creator=creator,
+            title="Duration Room",
+            status=LiveSession.Status.ENDED,
+            started_at=now - timedelta(minutes=45),
+            ended_at=now,
+        )
+        
+        data = LiveSessionSerializer(session).data
+        self.assertEqual(data["duration_seconds"], 45 * 60)

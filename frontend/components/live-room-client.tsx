@@ -67,6 +67,58 @@ function Stage() {
   );
 }
 
+interface CommentNodeProps {
+  comment: Comment;
+  repliesMap: Map<number, Comment[]>;
+  session: LiveSession;
+  handleReply: (comment: Comment) => void;
+}
+
+function CommentNode({ comment, repliesMap, session, handleReply }: CommentNodeProps) {
+  const replies = repliesMap.get(comment.id) ?? [];
+  return (
+    <div className="comment-thread" key={comment.id}>
+      <article className={`comment-card ${comment.parent_id ? "comment-card--reply" : ""}`}>
+        <div className="comment-card__meta">
+          <strong>
+            {comment.user.profile.display_name || comment.user.username}
+          </strong>
+          <span className="muted">
+            {new Intl.DateTimeFormat(undefined, {
+              hour: "numeric",
+              minute: "2-digit",
+            }).format(new Date(comment.created_at))}
+          </span>
+        </div>
+        <p>{comment.body}</p>
+        {session.status !== "ended" && (
+          <button
+            className="reply-btn"
+            onClick={() => handleReply(comment)}
+            type="button"
+          >
+            Reply
+          </button>
+        )}
+      </article>
+
+      {replies.length > 0 && (
+        <div className="comment-replies">
+          {replies.map((reply) => (
+            <CommentNode
+              key={reply.id}
+              comment={reply}
+              repliesMap={repliesMap}
+              session={session}
+              handleReply={handleReply}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
   const searchParams = useSearchParams();
   const { token, user } = useAuth();
@@ -115,19 +167,20 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
           return;
         }
 
-        const tokenRole =
-          requestedRole === "creator" || sessionData.creator.id === user?.id
-            ? "creator"
-            : "viewer";
-        const tokenData = await getLiveToken(token, sessionId, tokenRole);
-        if (!isActive) {
-          return;
-        }
-
         setSession(sessionData);
-        setLivekit(tokenData);
+
         if (sessionData.status === "ended") {
           setLiveEndedMessage("This live has ended.");
+        } else {
+          const tokenRole =
+            requestedRole === "creator" || sessionData.creator.id === user?.id
+              ? "creator"
+              : "viewer";
+          const tokenData = await getLiveToken(token, sessionId, tokenRole);
+          if (!isActive) {
+            return;
+          }
+          setLivekit(tokenData);
         }
       } catch (loadError) {
         if (!isActive) {
@@ -253,11 +306,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
   }, [activeSessionId, activeSessionStatus, liveEndedMessage, sessionId, token]);
 
   function handleReply(comment: Comment) {
-    // Always reply to the root-level comment
-    const target = comment.parent_id
-      ? (comments.find((c) => c.id === comment.parent_id) ?? comment)
-      : comment;
-    setReplyingTo(target);
+    setReplyingTo(comment);
     setTimeout(() => commentInputRef.current?.focus(), 50);
   }
 
@@ -370,7 +419,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
             Fetching session detail and requesting your LiveKit access token.
           </p>
         </section>
-      ) : session && livekit ? (
+      ) : session && (session.status === "ended" || livekit) ? (
         <div className="grid room-layout room-grid">
           <section className="panel stack">
             <span className="eyebrow">{resolvedRole === "creator" ? "Broadcasting" : "Watching"}</span>
@@ -430,8 +479,8 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
                 video={resolvedRole === "creator"}
                 connect
                 data-lk-theme="default"
-                serverUrl={livekit.livekit_url}
-                token={livekit.token}
+                serverUrl={livekit!.livekit_url}
+                token={livekit!.token}
               >
                 <Stage />
               </LiveKitRoom>
@@ -500,66 +549,15 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
                     }
                   }
 
-                  return rootComments.map((comment) => {
-                    const replies = repliesByParent.get(comment.id) ?? [];
-                    return (
-                      <div className="comment-thread" key={comment.id}>
-                        <article className="comment-card">
-                          <div className="comment-card__meta">
-                            <strong>
-                              {comment.user.profile.display_name || comment.user.username}
-                            </strong>
-                            <span className="muted">
-                              {new Intl.DateTimeFormat(undefined, {
-                                hour: "numeric",
-                                minute: "2-digit",
-                              }).format(new Date(comment.created_at))}
-                            </span>
-                          </div>
-                          <p>{comment.body}</p>
-                          {session.status !== "ended" && (
-                            <button
-                              className="reply-btn"
-                              onClick={() => handleReply(comment)}
-                              type="button"
-                            >
-                              Reply
-                            </button>
-                          )}
-                        </article>
-
-                        {replies.length > 0 && (
-                          <div className="comment-replies">
-                            {replies.map((reply) => (
-                              <article className="comment-card comment-card--reply" key={reply.id}>
-                                <div className="comment-card__meta">
-                                  <strong>
-                                    {reply.user.profile.display_name || reply.user.username}
-                                  </strong>
-                                  <span className="muted">
-                                    {new Intl.DateTimeFormat(undefined, {
-                                      hour: "numeric",
-                                      minute: "2-digit",
-                                    }).format(new Date(reply.created_at))}
-                                  </span>
-                                </div>
-                                <p>{reply.body}</p>
-                                {session.status !== "ended" && (
-                                  <button
-                                    className="reply-btn"
-                                    onClick={() => handleReply(reply)}
-                                    type="button"
-                                  >
-                                    Reply
-                                  </button>
-                                )}
-                              </article>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  });
+                  return rootComments.map((comment) => (
+                    <CommentNode
+                      key={comment.id}
+                      comment={comment}
+                      repliesMap={repliesByParent}
+                      session={session}
+                      handleReply={handleReply}
+                    />
+                  ));
                 })()
               ) : (
                 <div className="empty-stage">

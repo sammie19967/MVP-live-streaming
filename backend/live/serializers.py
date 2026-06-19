@@ -8,6 +8,7 @@ class LiveSessionSerializer(serializers.ModelSerializer):
     creator = UserSerializer(read_only=True)
     comment_count = serializers.SerializerMethodField()
     heart_count = serializers.SerializerMethodField()
+    duration_seconds = serializers.SerializerMethodField()
 
     class Meta:
         model = LiveSession
@@ -25,6 +26,7 @@ class LiveSessionSerializer(serializers.ModelSerializer):
             "created_at",
             "comment_count",
             "heart_count",
+            "duration_seconds",
         ]
 
     def get_comment_count(self, obj):
@@ -38,6 +40,11 @@ class LiveSessionSerializer(serializers.ModelSerializer):
         if annotated_count is not None:
             return annotated_count
         return obj.reactions.filter(type=Reaction.Type.HEART).count()
+
+    def get_duration_seconds(self, obj):
+        if obj.started_at and obj.ended_at:
+            return int((obj.ended_at - obj.started_at).total_seconds())
+        return None
 
 
 class StartLiveSessionSerializer(serializers.Serializer):

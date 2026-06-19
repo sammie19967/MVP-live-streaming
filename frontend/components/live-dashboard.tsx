@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
-import { buildWebSocketUrl, getLiveFeed, type LiveSession } from "@/lib/api";
+import { buildWebSocketUrl, getLiveFeed, getMediaUrl, type LiveSession } from "@/lib/api";
 
 function formatStartedAt(value: string | null) {
   if (!value) {
@@ -19,9 +19,27 @@ function formatStartedAt(value: string | null) {
   }).format(new Date(value));
 }
 
+function formatDuration(seconds: number | null) {
+  if (seconds === null || seconds === undefined) {
+    return "0s";
+  }
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const mins = Math.floor(seconds / 60);
+  const remainingSecs = seconds % 60;
+  if (mins < 60) {
+    return `${mins}m ${remainingSecs}s`;
+  }
+  const hours = Math.floor(mins / 60);
+  const remainingMins = mins % 60;
+  return `${hours}h ${remainingMins}m`;
+}
+
 export function LiveDashboard() {
   const { isLoading, logout, token, user } = useAuth();
   const [sessions, setSessions] = useState<LiveSession[]>([]);
+  const [pastSessions, setPastSessions] = useState<LiveSession[]>([]);
   const [feedLoading, setFeedLoading] = useState(true);
   const [feedError, setFeedError] = useState<string | null>(null);
 
@@ -30,11 +48,17 @@ export function LiveDashboard() {
 
     async function loadFeed() {
       try {
-        const data = await getLiveFeed();
+        const data = await getLiveFeed("live");
         if (!isActive) {
           return;
         }
         setSessions(data);
+
+        const endedData = await getLiveFeed("ended");
+        if (!isActive) {
+          return;
+        }
+        setPastSessions(endedData);
         setFeedError(null);
       } catch (error) {
         if (!isActive) {
@@ -66,26 +90,30 @@ export function LiveDashboard() {
         session: LiveSession;
       };
 
-      setSessions((current) => {
-        if (payload.type === "session.started") {
+      if (payload.type === "session.started") {
+        setSessions((current) => {
           const withoutDuplicate = current.filter(
             (session) => session.id !== payload.session.id,
           );
           return [payload.session, ...withoutDuplicate];
-        }
-
-        if (payload.type === "session.updated") {
-          return current.map((session) =>
+        });
+      } else if (payload.type === "session.updated") {
+        setSessions((current) =>
+          current.map((session) =>
             session.id === payload.session.id ? payload.session : session,
+          )
+        );
+      } else if (payload.type === "session.ended") {
+        setSessions((current) =>
+          current.filter((session) => session.id !== payload.session.id)
+        );
+        setPastSessions((current) => {
+          const withoutDuplicate = current.filter(
+            (session) => session.id !== payload.session.id,
           );
-        }
-
-        if (payload.type === "session.ended") {
-          return current.filter((session) => session.id !== payload.session.id);
-        }
-
-        return current;
-      });
+          return [payload.session, ...withoutDuplicate];
+        });
+      }
     };
 
     socket.onerror = () => {
@@ -213,7 +241,7 @@ export function LiveDashboard() {
               <article className="session-card" key={session.id}>
                 {session.thumbnail ? (
                   <div className="session-card__thumbnail">
-                    <img src={session.thumbnail} alt={session.title} />
+                    <img src={getMediaUrl(session.thumbnail) ?? undefined} alt={session.title} />
                   </div>
                 ) : (
                   <div className="session-card__thumbnail placeholder-gradient" />
@@ -249,6 +277,63 @@ export function LiveDashboard() {
                 Start first live
               </Link>
             ) : null}
+          </div>
+        )}
+      </section>
+
+      {/* Past Broadcasts Section */}
+      <section className="panel stack" id="past-broadcasts" style={{ marginTop: "1.5rem" }}>
+        <div className="status-row">
+          <h2 className="section-title">Past broadcasts</h2>
+          <span className="muted">
+            {feedLoading ? "Loading..." : `Recorded live sessions | ${pastSessions.length} recorded`}
+          </span>
+        </div>
+
+        {feedLoading ? (
+          <p className="muted">Loading past broadcasts from Django.</p>
+        ) : pastSessions.length ? (
+          <div className="session-grid">
+            {pastSessions.map((session) => (
+              <article className="session-card session-card--past" key={session.id}>
+                {session.thumbnail ? (
+                  <div className="session-card__thumbnail">
+                    <img src={getMediaUrl(session.thumbnail) ?? undefined} alt={session.title} />
+                  </div>
+                ) : (
+                  <div className="session-card__thumbnail placeholder-gradient" />
+                )}
+                <div className="session-card__meta">
+                  <span className="session-badge session-badge--ended">ENDED</span>
+                  <span className="muted">{formatStartedAt(session.started_at)}</span>
+                </div>
+                <h3 className="session-card__title">{session.title}</h3>
+                <p className="muted">
+                  by {session.creator.profile.display_name || session.creator.username}
+                </p>
+                <div className="past-stats" style={{ display: "grid", gap: "0.2rem", fontSize: "0.88rem" }}>
+                  <p className="muted">
+                    Duration: <strong>{formatDuration(session.duration_seconds)}</strong>
+                  </p>
+                  <p className="muted">
+                    Total views: <strong>{session.total_view_count}</strong>
+                  </p>
+                  <p className="muted">
+                    Engagement: <strong>{session.comment_count} comments</strong> | <strong>{session.heart_count} hearts</strong>
+                  </p>
+                </div>
+                <Link className="button ghost-button" href={`/live/${session.id}`}>
+                  View archive
+                </Link>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <h3 className="section-title">No recordings available.</h3>
+            <p className="section-copy">
+              Ended live streams will appear here as records for future reference.
+            </p>
           </div>
         )}
       </section>
