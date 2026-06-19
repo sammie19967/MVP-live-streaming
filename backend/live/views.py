@@ -170,8 +170,13 @@ class LiveSessionTokenView(APIView):
                 room=session.livekit_room_name,
                 can_publish=role == "creator",
                 can_publish_data=role == "creator",
-                can_publish_sources=(["camera", "microphone"] if role == "creator" else None),
+                can_publish_sources=(
+                    ["camera", "microphone", "screen_share", "screen_share_audio"]
+                    if role == "creator"
+                    else None
+                ),
                 can_subscribe=True,
+                can_update_own_metadata=True,
             )
             )
             .with_ttl(timedelta(hours=2))

@@ -445,9 +445,75 @@ main {
 }
 
 .video-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   padding: 0.85rem 1rem;
   color: var(--muted);
   border-top: 1px solid var(--line);
+}
+
+.hand-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.7rem;
+  padding: 0 0.65rem;
+  border-radius: 999px;
+  background: rgba(14, 159, 110, 0.12);
+  color: var(--success);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.live-controls-wrap {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.live-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.75rem;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.control-button,
+.live-controls .lk-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 42px;
+  padding: 0 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--foreground);
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.control-button:hover,
+.live-controls .lk-button:hover {
+  transform: translateY(-1px);
+}
+
+.control-button--active,
+.live-controls .lk-button[aria-pressed="true"],
+.live-controls .lk-button[data-lk-enabled="true"] {
+  border-color: rgba(14, 159, 110, 0.32);
+  background: rgba(14, 159, 110, 0.12);
+  color: var(--success);
+}
+
+.control-button--danger {
+  margin-left: auto;
+  border-color: rgba(194, 57, 52, 0.24);
+  color: var(--danger);
 }
 
 .comments-panel {
@@ -569,6 +635,10 @@ main {
   .nav {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .control-button--danger {
+    margin-left: 0;
   }
 }
 

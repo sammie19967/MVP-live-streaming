@@ -5,10 +5,13 @@ import "@livekit/components-styles";
 import {
   LiveKitRoom,
   RoomAudioRenderer,
+  TrackToggle,
+  useLocalParticipant,
+  useRoomContext,
   useTracks,
   VideoTrack,
 } from "@livekit/components-react";
-import { Track } from "livekit-client";
+import { ParticipantEvent, RoomEvent, Track, type Participant } from "livekit-client";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -31,26 +34,66 @@ type LiveRoomClientProps = {
   sessionId: string;
 };
 
-function Stage() {
-  const cameraTracks = useTracks([
+type ParticipantMetadata = {
+  handRaised?: boolean;
+};
+
+function parseParticipantMetadata(metadata?: string): ParticipantMetadata {
+  if (!metadata) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(metadata) as ParticipantMetadata;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function ParticipantCaption({ participant, source }: { participant: Participant; source: Track.Source }) {
+  const [metadata, setMetadata] = useState(participant.metadata);
+  const handRaised = parseParticipantMetadata(metadata).handRaised;
+  const label = source === Track.Source.ScreenShare ? "Screen" : "Camera";
+
+  useEffect(() => {
+    const handleMetadataChanged = () => setMetadata(participant.metadata);
+    participant.on(ParticipantEvent.ParticipantMetadataChanged, handleMetadataChanged);
+    return () => {
+      participant.off(ParticipantEvent.ParticipantMetadataChanged, handleMetadataChanged);
+    };
+  }, [participant]);
+
+  return (
+    <div className="video-caption">
+      <span>{participant.name || participant.identity} · {label}</span>
+      {handRaised ? <span className="hand-pill">Hand raised</span> : null}
+    </div>
+  );
+}
+
+function Stage({ audioMuted }: { audioMuted: boolean }) {
+  const videoTracks = useTracks([
     { source: Track.Source.Camera, withPlaceholder: false },
+    { source: Track.Source.ScreenShare, withPlaceholder: false },
   ]);
 
   return (
     <div className="live-stage">
-      <RoomAudioRenderer />
-      {cameraTracks.length ? (
+      <RoomAudioRenderer muted={audioMuted} />
+      {videoTracks.length ? (
         <div className="video-grid">
-          {cameraTracks.map((trackRef) =>
+          {videoTracks.map((trackRef) =>
             trackRef.publication ? (
               <div
                 className="video-card"
                 key={trackRef.publication.trackSid ?? trackRef.participant.identity}
               >
                 <VideoTrack trackRef={trackRef} />
-                <div className="video-caption">
-                  {trackRef.participant.name || trackRef.participant.identity}
-                </div>
+                <ParticipantCaption
+                  participant={trackRef.participant}
+                  source={trackRef.source}
+                />
               </div>
             ) : null,
           )}
@@ -64,6 +107,120 @@ function Stage() {
         </div>
       )}
     </div>
+  );
+}
+
+function LiveControls({
+  audioMuted,
+  onAudioMutedChange,
+  role,
+}: {
+  audioMuted: boolean;
+  onAudioMutedChange: (muted: boolean) => void;
+  role: "creator" | "viewer";
+}) {
+  const room = useRoomContext();
+  const { localParticipant } = useLocalParticipant();
+  const [metadata, setMetadata] = useState(localParticipant.metadata);
+  const [metadataBusy, setMetadataBusy] = useState(false);
+  const [controlError, setControlError] = useState<string | null>(null);
+  const handRaised = parseParticipantMetadata(metadata).handRaised;
+  const canPublish = role === "creator";
+
+  useEffect(() => {
+    const handleMetadataChanged = () => setMetadata(localParticipant.metadata);
+    const handleRoomMetadataChanged = (_metadata: string | undefined, participant?: Participant) => {
+      if (participant?.sid === localParticipant.sid) {
+        setMetadata(participant.metadata);
+      }
+    };
+
+    localParticipant.on(ParticipantEvent.ParticipantMetadataChanged, handleMetadataChanged);
+    room.on(RoomEvent.ParticipantMetadataChanged, handleRoomMetadataChanged);
+    return () => {
+      localParticipant.off(ParticipantEvent.ParticipantMetadataChanged, handleMetadataChanged);
+      room.off(RoomEvent.ParticipantMetadataChanged, handleRoomMetadataChanged);
+    };
+  }, [localParticipant, room]);
+
+  async function toggleHandRaised() {
+    setMetadataBusy(true);
+    setControlError(null);
+
+    try {
+      const nextMetadata = {
+        ...parseParticipantMetadata(localParticipant.metadata),
+        handRaised: !handRaised,
+      };
+      await localParticipant.setMetadata(JSON.stringify(nextMetadata));
+      setMetadata(JSON.stringify(nextMetadata));
+    } catch (raiseError) {
+      setControlError(
+        raiseError instanceof Error
+          ? raiseError.message
+          : "Unable to update your hand status.",
+      );
+    } finally {
+      setMetadataBusy(false);
+    }
+  }
+
+  return (
+    <div className="live-controls-wrap">
+      <div className="live-controls" aria-label="Live room controls">
+        {canPublish ? (
+          <>
+            <TrackToggle className="control-button" source={Track.Source.Microphone}>
+              Mic
+            </TrackToggle>
+            <TrackToggle className="control-button" source={Track.Source.Camera}>
+              Camera
+            </TrackToggle>
+            <TrackToggle
+              captureOptions={{ audio: true, selfBrowserSurface: "include" }}
+              className="control-button"
+              source={Track.Source.ScreenShare}
+            >
+              Share screen
+            </TrackToggle>
+          </>
+        ) : null}
+        <button
+          className={`control-button ${handRaised ? "control-button--active" : ""}`}
+          disabled={metadataBusy}
+          onClick={() => void toggleHandRaised()}
+          type="button"
+        >
+          {handRaised ? "Lower hand" : "Raise hand"}
+        </button>
+        <button
+          className={`control-button ${audioMuted ? "control-button--active" : ""}`}
+          onClick={() => onAudioMutedChange(!audioMuted)}
+          type="button"
+        >
+          {audioMuted ? "Unmute audio" : "Mute audio"}
+        </button>
+        <button className="control-button control-button--danger" onClick={() => room.disconnect()} type="button">
+          Leave
+        </button>
+      </div>
+      {controlError ? <p className="form-error">{controlError}</p> : null}
+    </div>
+  );
+}
+
+function LiveRoomSurface({ role }: { role: "creator" | "viewer" }) {
+  const [audioMuted, setAudioMuted] = useState(false);
+
+  return (
+    <>
+      <Stage audioMuted={audioMuted} />
+      <LiveControls
+        audioMuted={audioMuted}
+        onAudioMutedChange={setAudioMuted}
+        role={role}
+      />
+    </>
   );
 }
 
@@ -482,7 +639,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
                 serverUrl={livekit!.livekit_url}
                 token={livekit!.token}
               >
-                <Stage />
+                <LiveRoomSurface role={resolvedRole} />
               </LiveKitRoom>
             )}
           </section>
