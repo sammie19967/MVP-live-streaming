@@ -1,7 +1,7 @@
 from django.contrib.auth import authenticate
 from rest_framework import serializers
 
-from users.models import Follow, Profile, User
+from users.models import DirectMessage, Follow, Profile, User
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -54,3 +54,14 @@ class FollowSerializer(serializers.ModelSerializer):
         model = Follow
         fields = ["id", "follower", "following", "created_at"]
         read_only_fields = ["id", "follower", "created_at"]
+
+
+class DirectMessageSerializer(serializers.ModelSerializer):
+    sender = UserSerializer(read_only=True)
+    recipient = UserSerializer(read_only=True)
+
+    class Meta:
+        model = DirectMessage
+        fields = ["id", "sender", "recipient", "body", "created_at", "is_read"]
+        read_only_fields = ["id", "sender", "recipient", "created_at", "is_read"]
+

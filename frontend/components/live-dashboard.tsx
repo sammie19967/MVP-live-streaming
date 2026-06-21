@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
+import { DirectMessageWidget } from "@/components/dm-widget";
 import { buildWebSocketUrl, getLiveFeed, getMediaUrl, type LiveSession } from "@/lib/api";
 
 function formatStartedAt(value: string | null) {
@@ -42,6 +43,7 @@ export function LiveDashboard() {
   const [pastSessions, setPastSessions] = useState<LiveSession[]>([]);
   const [feedLoading, setFeedLoading] = useState(true);
   const [feedError, setFeedError] = useState<string | null>(null);
+  const [isDmOpen, setIsDmOpen] = useState(false);
 
   useEffect(() => {
     let isActive = true;
@@ -337,6 +339,7 @@ export function LiveDashboard() {
           </div>
         )}
       </section>
+      <DirectMessageWidget isOpen={isDmOpen} setIsOpen={setIsDmOpen} />
     </div>
   );
 }

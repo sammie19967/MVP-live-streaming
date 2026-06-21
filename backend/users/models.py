@@ -45,4 +45,26 @@ class Follow(models.Model):
         if self.follower_id == self.following_id:
             raise ValidationError("Users cannot follow themselves.")
 
+
+class DirectMessage(models.Model):
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="sent_dms",
+    )
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="received_dms",
+    )
+    body = models.TextField(max_length=1000)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_read = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"From {self.sender} to {self.recipient}: {self.body[:30]}"
+
 # Create your models here.

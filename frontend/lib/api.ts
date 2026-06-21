@@ -53,6 +53,22 @@ export type Comment = {
   created_at: string;
 };
 
+export type DirectMessage = {
+  id: number;
+  sender: User;
+  recipient: User;
+  body: string;
+  created_at: string;
+  is_read: boolean;
+};
+
+export type DMThread = {
+  user: User;
+  last_message: DirectMessage | null;
+  unread_count: number;
+};
+
+
 export type RegisterPayload = {
   username: string;
   email: string;
@@ -259,6 +275,55 @@ export function buildWebSocketUrl(path: string, token?: string | null) {
   return url.toString();
 }
 
+export async function getDMs(token: string, withUserId: number | string) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/users/dms/?with_user_id=${withUserId}`,
+    {
+      headers: {
+        Authorization: `Token ${token}`,
+      },
+      cache: "no-store",
+    }
+  );
+
+  return parseResponse<DirectMessage[]>(response);
+}
+
+export async function postDM(token: string, recipientId: number | string, body: string) {
+  const response = await fetch(`${API_BASE_URL}/api/users/dms/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Token ${token}`,
+    },
+    body: JSON.stringify({ recipient_id: recipientId, body }),
+  });
+
+  return parseResponse<DirectMessage>(response);
+}
+
+export async function getDMThreads(token: string) {
+  const response = await fetch(`${API_BASE_URL}/api/users/dms/threads/`, {
+    headers: {
+      Authorization: `Token ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  return parseResponse<DMThread[]>(response);
+}
+
+export async function getUsers(token: string) {
+  const response = await fetch(`${API_BASE_URL}/api/users/`, {
+    headers: {
+      Authorization: `Token ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  return parseResponse<User[]>(response);
+}
+
 export function getMediaUrl(url: string | null): string | null {
   if (!url) return null;
   if (url.startsWith("http://") || url.startsWith("https://")) {
@@ -267,3 +332,4 @@ export function getMediaUrl(url: string | null): string | null {
   const cleanUrl = url.startsWith("/") ? url : `/${url}`;
   return `${API_BASE_URL}${cleanUrl}`;
 }
+

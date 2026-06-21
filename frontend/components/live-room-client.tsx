@@ -7,6 +7,7 @@ import {
   RoomAudioRenderer,
   TrackToggle,
   useLocalParticipant,
+  useParticipants,
   useRoomContext,
   useTracks,
   VideoTrack,
@@ -25,17 +26,27 @@ import {
   getLiveToken,
   postLiveComment,
   postLiveReaction,
+  getDMs,
+  postDM,
+  getDMThreads,
   type Comment,
   type LiveSession,
   type LiveTokenResponse,
+  type DirectMessage,
+  type DMThread,
+  type User,
 } from "@/lib/api";
+
 
 type LiveRoomClientProps = {
   sessionId: string;
 };
 
 type ParticipantMetadata = {
+  avatarUrl?: string;
+  displayName?: string;
   handRaised?: boolean;
+  role?: "creator" | "viewer";
 };
 
 function parseParticipantMetadata(metadata?: string): ParticipantMetadata {
@@ -66,7 +77,7 @@ function ParticipantCaption({ participant, source }: { participant: Participant;
 
   return (
     <div className="video-caption">
-      <span>{participant.name || participant.identity} · {label}</span>
+      <span>{participant.name || participant.identity} - {label}</span>
       {handRaised ? <span className="hand-pill">Hand raised</span> : null}
     </div>
   );
@@ -102,11 +113,76 @@ function Stage({ audioMuted }: { audioMuted: boolean }) {
         <div className="empty-stage">
           <h3 className="section-title">Waiting for camera feed</h3>
           <p className="section-copy">
-            If you are the creator, grant camera and microphone permissions so your stream can publish.
+            Turn on your camera or wait for someone else in the room to start video.
           </p>
         </div>
       )}
     </div>
+  );
+}
+
+function getParticipantDisplayName(participant: Participant, metadata: ParticipantMetadata) {
+  return metadata.displayName || participant.name || participant.identity;
+}
+
+function getInitials(name: string) {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const initials = words.length > 1
+    ? `${words[0][0] ?? ""}${words[1][0] ?? ""}`
+    : name.slice(0, 2);
+  return initials.toUpperCase();
+}
+
+function ParticipantAvatar({ name, avatarUrl }: { name: string; avatarUrl?: string }) {
+  return (
+    <span
+      aria-label={name}
+      className={`participant-avatar ${avatarUrl ? "participant-avatar--image" : ""}`}
+      style={avatarUrl ? { backgroundImage: `url("${avatarUrl}")` } : undefined}
+    >
+      {!avatarUrl ? getInitials(name) : null}
+    </span>
+  );
+}
+
+function ParticipantRoster() {
+  const participants = useParticipants();
+
+  return (
+    <section className="participant-roster" aria-label="People in room">
+      <div className="status-row">
+        <h2 className="section-title">People in room</h2>
+        <span className="muted">{participants.length} joined</span>
+      </div>
+      <div className="participant-list">
+        {participants.map((participant) => {
+          const metadata = parseParticipantMetadata(participant.metadata);
+          const name = getParticipantDisplayName(participant, metadata);
+          const role = metadata.role ?? "viewer";
+
+          return (
+            <article className="participant-row" key={participant.sid || participant.identity}>
+              <ParticipantAvatar avatarUrl={metadata.avatarUrl} name={name} />
+              <div className="participant-main">
+                <div className="participant-name-row">
+                  <strong>{name}</strong>
+                  {participant.isLocal ? <span className="muted">You</span> : null}
+                </div>
+                <span className="muted">
+                  {role === "creator" ? "Creator" : "Participant"}
+                  {participant.isSpeaking ? " - speaking" : ""}
+                </span>
+              </div>
+              <div className="participant-badges">
+                {participant.isMicrophoneEnabled ? <span className="status-dot">Mic</span> : null}
+                {participant.isCameraEnabled ? <span className="status-dot">Video</span> : null}
+                {metadata.handRaised ? <span className="hand-pill">Hand</span> : null}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -125,7 +201,7 @@ function LiveControls({
   const [metadataBusy, setMetadataBusy] = useState(false);
   const [controlError, setControlError] = useState<string | null>(null);
   const handRaised = parseParticipantMetadata(metadata).handRaised;
-  const canPublish = role === "creator";
+  const canShareScreen = role === "creator";
 
   useEffect(() => {
     const handleMetadataChanged = () => setMetadata(localParticipant.metadata);
@@ -168,22 +244,20 @@ function LiveControls({
   return (
     <div className="live-controls-wrap">
       <div className="live-controls" aria-label="Live room controls">
-        {canPublish ? (
-          <>
-            <TrackToggle className="control-button" source={Track.Source.Microphone}>
-              Mic
-            </TrackToggle>
-            <TrackToggle className="control-button" source={Track.Source.Camera}>
-              Camera
-            </TrackToggle>
-            <TrackToggle
-              captureOptions={{ audio: true, selfBrowserSurface: "include" }}
-              className="control-button"
-              source={Track.Source.ScreenShare}
-            >
-              Share screen
-            </TrackToggle>
-          </>
+        <TrackToggle className="control-button" source={Track.Source.Microphone}>
+          Mic
+        </TrackToggle>
+        <TrackToggle className="control-button" source={Track.Source.Camera}>
+          Camera
+        </TrackToggle>
+        {canShareScreen ? (
+          <TrackToggle
+            captureOptions={{ audio: true, selfBrowserSurface: "include" }}
+            className="control-button"
+            source={Track.Source.ScreenShare}
+          >
+            Share screen
+          </TrackToggle>
         ) : null}
         <button
           className={`control-button ${handRaised ? "control-button--active" : ""}`}
@@ -220,6 +294,7 @@ function LiveRoomSurface({ role }: { role: "creator" | "viewer" }) {
         onAudioMutedChange={setAudioMuted}
         role={role}
       />
+      <ParticipantRoster />
     </>
   );
 }
@@ -293,6 +368,15 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
   const roomSocketRef = useRef<WebSocket | null>(null);
   const commentInputRef = useRef<HTMLInputElement | null>(null);
 
+  // DM State
+  const [activeTab, setActiveTab] = useState<"chat" | "dms">("chat");
+  const [dms, setDms] = useState<DirectMessage[]>([]);
+  const [dmThreads, setDmThreads] = useState<DMThread[]>([]);
+  const [activeDmUser, setActiveDmUser] = useState<User | null>(null);
+  const [dmBody, setDmBody] = useState("");
+  const [dmSubmitting, setDmSubmitting] = useState(false);
+  const chatSocketRef = useRef<WebSocket | null>(null);
+
   const requestedRole = searchParams.get("role") === "creator" ? "creator" : "viewer";
   const activeSessionId = session?.id;
   const activeSessionStatus = session?.status;
@@ -305,6 +389,28 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
     }
     return "viewer";
   }, [requestedRole, session, user]);
+
+  // Keep refs updated to prevent socket reconnections
+  const activeDmUserRef = useRef(activeDmUser);
+  const activeTabRef = useRef(activeTab);
+  const resolvedRoleRef = useRef(resolvedRole);
+  const sessionRef = useRef(session);
+  const userRef = useRef(user);
+
+  useEffect(() => { activeDmUserRef.current = activeDmUser; }, [activeDmUser]);
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+  useEffect(() => { resolvedRoleRef.current = resolvedRole; }, [resolvedRole]);
+  useEffect(() => { sessionRef.current = session; }, [session]);
+  useEffect(() => { userRef.current = user; }, [user]);
+
+  const totalUnreadDMs = useMemo(() => {
+    if (resolvedRole === "creator") {
+      return dmThreads.reduce((sum, t) => sum + t.unread_count, 0);
+    } else {
+      return dms.filter((d) => d.sender.id === session?.creator.id && !d.is_read).length;
+    }
+  }, [dmThreads, dms, resolvedRole, session?.creator.id]);
+
 
   useEffect(() => {
     let isActive = true;
@@ -450,7 +556,13 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
       }
     };
 
-    socket.onerror = () => {
+    socket.onerror = (err) => {
+      console.error("Room WebSocket error:", {
+        type: err.type,
+        target: err.target?.url || err.target,
+        readyState: err.target?.readyState,
+        message: err.message,
+      });
       if (!liveEndedMessage) {
         setError("Room socket disconnected. Refresh to reconnect.");
       }
@@ -461,6 +573,219 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
       socket.close();
     };
   }, [activeSessionId, activeSessionStatus, liveEndedMessage, sessionId, token]);
+
+  // Load DM threads for creator
+  useEffect(() => {
+    if (!token || resolvedRole !== "creator") {
+      return;
+    }
+
+    async function loadThreads() {
+      try {
+        const threads = await getDMThreads(token!);
+        setDmThreads(threads);
+      } catch (e) {
+        console.error("Error loading DM threads:", e);
+      }
+    }
+
+    loadThreads();
+  }, [token, resolvedRole]);
+
+  // Load DM history for client
+  useEffect(() => {
+    if (!token || resolvedRole !== "viewer" || !session?.creator.id) {
+      return;
+    }
+
+    async function loadClientDMs() {
+      try {
+        const history = await getDMs(token!, session!.creator.id);
+        setDms(history);
+      } catch (e) {
+        console.error("Error loading client DMs:", e);
+      }
+    }
+
+    if (activeTab === "dms") {
+      void loadClientDMs();
+    }
+  }, [token, resolvedRole, session?.creator.id, activeTab]);
+
+  // Load DM history for host with specific client
+  useEffect(() => {
+    if (!token || resolvedRole !== "creator" || !activeDmUser?.id) {
+      return;
+    }
+
+    async function loadHostDMs() {
+      try {
+        const history = await getDMs(token!, activeDmUser!.id);
+        setDms(history);
+        setDmThreads((current) =>
+          current.map((t) => (t.user.id === activeDmUser!.id ? { ...t, unread_count: 0 } : t))
+        );
+      } catch (e) {
+        console.error("Error loading host DMs:", e);
+      }
+    }
+
+    loadHostDMs();
+  }, [token, resolvedRole, activeDmUser?.id]);
+
+  // Global Chat WebSocket Connection
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+
+    const socket = new WebSocket(buildWebSocketUrl("/ws/chat/", token));
+    chatSocketRef.current = socket;
+
+    socket.onmessage = (event) => {
+      const payload = JSON.parse(event.data) as {
+        type: "dm.created";
+        dm: DirectMessage;
+      };
+
+      if (payload.type === "dm.created") {
+        const msg = payload.dm;
+        const currentActiveDmUser = activeDmUserRef.current;
+        const currentResolvedRole = resolvedRoleRef.current;
+        const currentSession = sessionRef.current;
+        const currentUser = userRef.current;
+        const currentActiveTab = activeTabRef.current;
+
+        // Check if message belongs to the current conversation
+        const isRelevant =
+          currentResolvedRole === "creator"
+            ? currentActiveDmUser &&
+              (msg.sender.id === currentActiveDmUser.id || msg.recipient.id === currentActiveDmUser.id)
+            : currentSession &&
+              (msg.sender.id === currentSession.creator.id || msg.recipient.id === currentSession.creator.id);
+
+        if (isRelevant) {
+          setDms((current) => {
+            if (current.some((d) => d.id === msg.id)) {
+              return current;
+            }
+            return [...current, msg];
+          });
+        }
+
+        // Update threads list for creator (host)
+        if (currentResolvedRole === "creator" && currentUser) {
+          setDmThreads((current) => {
+            const partner = msg.sender.id === currentUser.id ? msg.recipient : msg.sender;
+            const exists = current.some((t) => t.user.id === partner.id);
+            const isCurrentActiveChat =
+              currentActiveDmUser?.id === partner.id && currentActiveTab === "dms";
+
+            if (exists) {
+              return current
+                .map((t) => {
+                  if (t.user.id === partner.id) {
+                    return {
+                      ...t,
+                      last_message: msg,
+                      unread_count:
+                        isCurrentActiveChat
+                          ? 0
+                          : t.unread_count + (msg.sender.id !== currentUser.id ? 1 : 0),
+                    };
+                  }
+                  return t;
+                })
+                .sort(
+                  (a, b) =>
+                    new Date(b.last_message?.created_at || 0).getTime() -
+                    new Date(a.last_message?.created_at || 0).getTime()
+                );
+            } else {
+              return [
+                {
+                  user: partner,
+                  last_message: msg,
+                  unread_count: isCurrentActiveChat ? 0 : msg.sender.id !== currentUser.id ? 1 : 0,
+                },
+                ...current,
+              ];
+            }
+          });
+        }
+      }
+    };
+
+    socket.onerror = (err) => {
+      console.error("Chat WebSocket error:", {
+        type: err.type,
+        target: err.target?.url || err.target,
+        readyState: err.target?.readyState,
+        message: err.message,
+      });
+    };
+
+    return () => {
+      chatSocketRef.current = null;
+      socket.close();
+    };
+  }, [token]);
+
+  async function handleDmSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !dmBody.trim()) {
+      return;
+    }
+
+    let recipientId: number | null = null;
+    if (resolvedRole === "creator") {
+      recipientId = activeDmUser?.id ?? null;
+    } else {
+      recipientId = session?.creator.id ?? null;
+    }
+
+    if (!recipientId) {
+      return;
+    }
+
+    setDmSubmitting(true);
+    try {
+      const response = await postDM(token, recipientId, dmBody.trim());
+      setDmBody("");
+      setDms((current) => {
+        if (current.some((d) => d.id === response.id)) {
+          return current;
+        }
+        return [...current, response];
+      });
+
+      if (resolvedRole === "creator") {
+        setDmThreads((current) => {
+          return current
+            .map((t) => {
+              if (t.user.id === recipientId) {
+                return {
+                  ...t,
+                  last_message: response,
+                };
+              }
+              return t;
+            })
+            .sort(
+              (a, b) =>
+                new Date(b.last_message?.created_at || 0).getTime() -
+                new Date(a.last_message?.created_at || 0).getTime()
+            );
+        });
+      }
+    } catch (e) {
+      console.error("Error sending DM:", e);
+      setError(e instanceof Error ? e.message : "Failed to send private message.");
+    } finally {
+      setDmSubmitting(false);
+    }
+  }
+
 
   function handleReply(comment: Comment) {
     setReplyingTo(comment);
@@ -644,87 +969,339 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
             )}
           </section>
 
-          <aside className="panel stack comments-panel">
-            <div className="status-row">
-              <h2 className="section-title">Live chat</h2>
-              <span className="muted">Instant WebSocket updates</span>
-            </div>
-
-            <form className="stack" onSubmit={handleCommentSubmit}>
-              {replyingTo && (
-                <div className="reply-banner">
-                  <span>
-                    Replying to{" "}
-                    <strong>
-                      {replyingTo.user.profile.display_name || replyingTo.user.username}
-                    </strong>
-                  </span>
-                  <button
-                    className="reply-banner__cancel"
-                    onClick={cancelReply}
-                    type="button"
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
-              <div className="field">
-                <label htmlFor="comment">Comment</label>
-                <input
-                  id="comment"
-                  ref={commentInputRef}
-                  maxLength={500}
-                  onChange={(event) => setCommentBody(event.target.value)}
-                  placeholder={
-                    replyingTo
-                      ? `Reply to ${replyingTo.user.profile.display_name || replyingTo.user.username}...`
-                      : "Say something in the stream..."
-                  }
-                  disabled={session.status === "ended"}
-                  value={commentBody}
-                />
-              </div>
+          <aside className="panel stack comments-panel" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            {/* Tabs Header */}
+            <div className="tabs-header" style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: "1rem" }}>
               <button
-                className="button"
-                disabled={commentSubmitting || !commentBody.trim() || session.status === "ended"}
-                type="submit"
+                className={`tab-btn ${activeTab === "chat" ? "tab-btn--active" : ""}`}
+                style={{
+                  flex: 1,
+                  padding: "0.75rem",
+                  background: "none",
+                  border: "none",
+                  borderBottom: activeTab === "chat" ? "2px solid var(--accent)" : "none",
+                  fontWeight: activeTab === "chat" ? "bold" : "normal",
+                  color: activeTab === "chat" ? "var(--accent)" : "var(--muted)",
+                  cursor: "pointer"
+                }}
+                onClick={() => setActiveTab("chat")}
+                type="button"
               >
-                {commentSubmitting ? "Posting..." : replyingTo ? "Reply" : "Send comment"}
+                Live Chat
               </button>
-            </form>
-
-            <div className="comment-list">
-              {comments.length ? (
-                (() => {
-                  const rootComments = comments.filter((c) => !c.parent_id);
-                  const repliesByParent = new Map<number, Comment[]>();
-                  for (const c of comments) {
-                    if (c.parent_id) {
-                      const list = repliesByParent.get(c.parent_id) ?? [];
-                      list.push(c);
-                      repliesByParent.set(c.parent_id, list);
-                    }
-                  }
-
-                  return rootComments.map((comment) => (
-                    <CommentNode
-                      key={comment.id}
-                      comment={comment}
-                      repliesMap={repliesByParent}
-                      session={session}
-                      handleReply={handleReply}
-                    />
-                  ));
-                })()
-              ) : (
-                <div className="empty-stage">
-                  <h3 className="section-title">No comments yet</h3>
-                  <p className="section-copy">
-                    Start the conversation from this panel.
-                  </p>
-                </div>
-              )}
+              <button
+                className={`tab-btn ${activeTab === "dms" ? "tab-btn--active" : ""}`}
+                style={{
+                  flex: 1,
+                  padding: "0.75rem",
+                  background: "none",
+                  border: "none",
+                  borderBottom: activeTab === "dms" ? "2px solid var(--accent)" : "none",
+                  fontWeight: activeTab === "dms" ? "bold" : "normal",
+                  color: activeTab === "dms" ? "var(--accent)" : "var(--muted)",
+                  cursor: "pointer",
+                  position: "relative"
+                }}
+                onClick={() => setActiveTab("dms")}
+                type="button"
+              >
+                Direct Messages
+                {totalUnreadDMs > 0 && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: "2px",
+                      right: "10px",
+                      background: "var(--danger)",
+                      color: "white",
+                      borderRadius: "999px",
+                      padding: "2px 6px",
+                      fontSize: "0.7rem",
+                      fontWeight: "bold"
+                    }}
+                  >
+                    {totalUnreadDMs}
+                  </span>
+                )}
+              </button>
             </div>
+
+            {activeTab === "chat" ? (
+              <>
+                <div className="status-row">
+                  <h2 className="section-title">Live chat</h2>
+                  <span className="muted">Instant WebSocket updates</span>
+                </div>
+
+                <form className="stack" onSubmit={handleCommentSubmit}>
+                  {replyingTo && (
+                    <div className="reply-banner">
+                      <span>
+                        Replying to{" "}
+                        <strong>
+                          {replyingTo.user.profile.display_name || replyingTo.user.username}
+                        </strong>
+                      </span>
+                      <button
+                        className="reply-banner__cancel"
+                        onClick={cancelReply}
+                        type="button"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                  <div className="field">
+                    <label htmlFor="comment">Comment</label>
+                    <input
+                      id="comment"
+                      ref={commentInputRef}
+                      maxLength={500}
+                      onChange={(event) => setCommentBody(event.target.value)}
+                      placeholder={
+                        replyingTo
+                          ? `Reply to ${replyingTo.user.profile.display_name || replyingTo.user.username}...`
+                          : "Say something in the stream..."
+                      }
+                      disabled={session.status === "ended"}
+                      value={commentBody}
+                    />
+                  </div>
+                  <button
+                    className="button"
+                    disabled={commentSubmitting || !commentBody.trim() || session.status === "ended"}
+                    type="submit"
+                  >
+                    {commentSubmitting ? "Posting..." : replyingTo ? "Reply" : "Send comment"}
+                  </button>
+                </form>
+
+                <div className="comment-list">
+                  {comments.length ? (
+                    (() => {
+                      const rootComments = comments.filter((c) => !c.parent_id);
+                      const repliesByParent = new Map<number, Comment[]>();
+                      for (const c of comments) {
+                        if (c.parent_id) {
+                          const list = repliesByParent.get(c.parent_id) ?? [];
+                          list.push(c);
+                          repliesByParent.set(c.parent_id, list);
+                        }
+                      }
+
+                      return rootComments.map((comment) => (
+                        <CommentNode
+                          key={comment.id}
+                          comment={comment}
+                          repliesMap={repliesByParent}
+                          session={session}
+                          handleReply={handleReply}
+                        />
+                      ));
+                    })()
+                  ) : (
+                    <div className="empty-stage">
+                      <h3 className="section-title">No comments yet</h3>
+                      <p className="section-copy">
+                        Start the conversation from this panel.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              /* Direct Messages Tab */
+              <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+                {resolvedRole === "creator" ? (
+                  /* Creator/Host View */
+                  activeDmUser ? (
+                    /* Creator chatting with specific client */
+                    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
+                        <button
+                          className="ghost-button"
+                          style={{ minHeight: "32px", height: "32px", padding: "0 0.75rem", fontSize: "0.85rem" }}
+                          onClick={() => setActiveDmUser(null)}
+                          type="button"
+                        >
+                          ← Back
+                        </button>
+                        <strong style={{ fontSize: "0.95rem" }}>
+                          Chat with {activeDmUser.profile?.display_name || activeDmUser.username}
+                        </strong>
+                      </div>
+
+                      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1rem", paddingRight: "4px" }}>
+                        {dms.length ? (
+                          dms.map((dm) => (
+                            <div
+                              key={dm.id}
+                              style={{
+                                alignSelf: dm.sender.id === user?.id ? "flex-end" : "flex-start",
+                                background: dm.sender.id === user?.id ? "var(--accent-soft)" : "rgba(255, 255, 255, 0.72)",
+                                color: dm.sender.id === user?.id ? "var(--accent-strong)" : "var(--foreground)",
+                                padding: "0.6rem 0.9rem",
+                                borderRadius: "16px",
+                                maxWidth: "85%",
+                                border: "1px solid var(--line)"
+                              }}
+                            >
+                              <p style={{ wordBreak: "break-word", fontSize: "0.9rem" }}>{dm.body}</p>
+                              <div style={{ fontSize: "0.65rem", color: "var(--muted)", textAlign: "right", marginTop: "0.2rem" }}>
+                                {new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(dm.created_at))}
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="empty-stage" style={{ padding: "1rem 0" }}>
+                            <p className="section-copy">No messages yet. Send a message to start the conversation.</p>
+                          </div>
+                        )}
+                      </div>
+
+                      <form className="stack" onSubmit={handleDmSubmit}>
+                        <div className="field">
+                          <input
+                            onChange={(e) => setDmBody(e.target.value)}
+                            placeholder="Type a private reply..."
+                            value={dmBody}
+                          />
+                        </div>
+                        <button
+                          className="button"
+                          disabled={dmSubmitting || !dmBody.trim()}
+                          type="submit"
+                        >
+                          {dmSubmitting ? "Sending..." : "Send Message"}
+                        </button>
+                      </form>
+                    </div>
+                  ) : (
+                    /* Creator viewing all DM threads */
+                    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflowY: "auto" }}>
+                      <h3 className="section-title" style={{ fontSize: "0.95rem", marginBottom: "0.75rem" }}>
+                        Inbox Conversations
+                      </h3>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        {dmThreads.length ? (
+                          dmThreads.map((thread) => (
+                            <div
+                              key={thread.user.id}
+                              onClick={() => setActiveDmUser(thread.user)}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.75rem",
+                                padding: "0.75rem",
+                                borderRadius: "16px",
+                                border: "1px solid var(--line)",
+                                cursor: "pointer",
+                                background: "rgba(255, 255, 255, 0.46)",
+                                transition: "background 120ms ease"
+                              }}
+                            >
+                              <ParticipantAvatar
+                                avatarUrl={thread.user.profile?.avatar_url}
+                                name={thread.user.profile?.display_name || thread.user.username}
+                              />
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                  <strong style={{ fontSize: "0.9rem", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                                    {thread.user.profile?.display_name || thread.user.username}
+                                  </strong>
+                                  {thread.unread_count > 0 && (
+                                    <span
+                                      style={{
+                                        background: "var(--danger)",
+                                        color: "white",
+                                        borderRadius: "999px",
+                                        padding: "1px 5px",
+                                        fontSize: "0.65rem",
+                                        fontWeight: "bold"
+                                      }}
+                                    >
+                                      {thread.unread_count} new
+                                    </span>
+                                  )}
+                                </div>
+                                <p style={{
+                                  color: "var(--muted)",
+                                  fontSize: "0.8rem",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                  marginTop: "0.1rem"
+                                }}>
+                                  {thread.last_message ? thread.last_message.body : "No messages yet"}
+                                </p>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="empty-stage" style={{ padding: "2rem 0" }}>
+                            <p className="section-copy">No active DM threads.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  /* Viewer/Client View (Direct chat with host) */
+                  <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                      <strong style={{ fontSize: "0.95rem" }}>
+                        Chat with Creator ({session.creator.profile?.display_name || session.creator.username})
+                      </strong>
+                    </div>
+
+                    <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1rem", paddingRight: "4px" }}>
+                      {dms.length ? (
+                        dms.map((dm) => (
+                          <div
+                            key={dm.id}
+                            style={{
+                              alignSelf: dm.sender.id === user?.id ? "flex-end" : "flex-start",
+                              background: dm.sender.id === user?.id ? "var(--accent-soft)" : "rgba(255, 255, 255, 0.72)",
+                              color: dm.sender.id === user?.id ? "var(--accent-strong)" : "var(--foreground)",
+                              padding: "0.6rem 0.9rem",
+                              borderRadius: "16px",
+                              maxWidth: "85%",
+                              border: "1px solid var(--line)"
+                            }}
+                          >
+                            <p style={{ wordBreak: "break-word", fontSize: "0.9rem" }}>{dm.body}</p>
+                            <div style={{ fontSize: "0.65rem", color: "var(--muted)", textAlign: "right", marginTop: "0.2rem" }}>
+                              {new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(dm.created_at))}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="empty-stage" style={{ padding: "1rem 0" }}>
+                          <p className="section-copy">Send a message to chat privately with the host.</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <form className="stack" onSubmit={handleDmSubmit}>
+                      <div className="field">
+                        <input
+                          onChange={(e) => setDmBody(e.target.value)}
+                          placeholder="Type a private message..."
+                          value={dmBody}
+                        />
+                      </div>
+                      <button
+                        className="button"
+                        disabled={dmSubmitting || !dmBody.trim()}
+                        type="submit"
+                      >
+                        {dmSubmitting ? "Sending..." : "Send DM"}
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </div>
+            )}
           </aside>
         </div>
       ) : (

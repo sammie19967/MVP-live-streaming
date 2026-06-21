@@ -1,7 +1,9 @@
+import json
 from datetime import timedelta
 from urllib.parse import urlsplit, urlunsplit
 
 from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Count, Q
 from django.utils import timezone
 from livekit import api as livekit_api
@@ -160,21 +162,37 @@ class LiveSessionTokenView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        try:
+            profile = request.user.profile
+        except ObjectDoesNotExist:
+            profile = None
+        display_name = (profile.display_name if profile else "") or request.user.username
+        avatar_url = profile.avatar_url if profile else ""
+        publish_sources = ["camera", "microphone"]
+        if role == "creator":
+            publish_sources += ["screen_share", "screen_share_audio"]
+
         token = (
             livekit_api.AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
             .with_identity(str(request.user.id))
-            .with_name(request.user.username)
+            .with_name(display_name)
+            .with_metadata(
+                json.dumps(
+                    {
+                        "avatarUrl": avatar_url,
+                        "displayName": display_name,
+                        "handRaised": False,
+                        "role": role,
+                    }
+                )
+            )
             .with_grants(
             livekit_api.VideoGrants(
                 room_join=True,
                 room=session.livekit_room_name,
-                can_publish=role == "creator",
+                can_publish=True,
                 can_publish_data=role == "creator",
-                can_publish_sources=(
-                    ["camera", "microphone", "screen_share", "screen_share_audio"]
-                    if role == "creator"
-                    else None
-                ),
+                can_publish_sources=publish_sources,
                 can_subscribe=True,
                 can_update_own_metadata=True,
             )

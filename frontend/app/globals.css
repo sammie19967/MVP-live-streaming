@@ -471,6 +471,92 @@ main {
   gap: 0.65rem;
 }
 
+.participant-roster {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.participant-list {
+  display: grid;
+  gap: 0.65rem;
+  max-height: 280px;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.participant-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem;
+  border-radius: 16px;
+  border: 1px solid rgba(44, 33, 15, 0.1);
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.participant-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.7rem;
+  height: 2.7rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 700;
+  letter-spacing: 0;
+  flex: 0 0 auto;
+}
+
+.participant-avatar--image {
+  background-position: center;
+  background-size: cover;
+  color: transparent;
+}
+
+.participant-main {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+}
+
+.participant-name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.participant-name-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.participant-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.status-dot {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.7rem;
+  padding: 0 0.6rem;
+  border-radius: 999px;
+  background: rgba(232, 93, 4, 0.1);
+  color: var(--accent-strong);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
 .live-controls {
   display: flex;
   flex-wrap: wrap;
@@ -639,6 +725,15 @@ main {
 
   .control-button--danger {
     margin-left: 0;
+  }
+
+  .participant-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .participant-badges {
+    grid-column: 2;
+    justify-content: flex-start;
   }
 }
 
