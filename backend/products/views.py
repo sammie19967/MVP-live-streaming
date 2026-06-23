@@ -1,4 +1,5 @@
 from django.db.models import Prefetch
+from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework.response import Response
@@ -67,10 +68,11 @@ class ProductDetailView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, slug):
+        product = get_object_or_404(Product, slug=slug, is_active=True)
         product = (
             Product.objects.select_related("owner", "category", "country", "location")
             .prefetch_related("images", "reviews__reviewer", "attribute_values__definition", "attribute_values__option")
-            .get(slug=slug, is_active=True)
+            .get(pk=product.pk)
         )
         return Response(ProductSerializer(product, context={"request": request}).data)
 
@@ -79,8 +81,12 @@ class ProductReviewCreateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, slug):
-        product = Product.objects.get(slug=slug, is_active=True)
+        product = get_object_or_404(Product, slug=slug, is_active=True)
         serializer = ProductReviewCreateSerializer(data=request.data, context={"request": request, "product": product})
         serializer.is_valid(raise_exception=True)
         review = serializer.save()
         return Response(ProductReviewCreateSerializer(review, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+
+
+

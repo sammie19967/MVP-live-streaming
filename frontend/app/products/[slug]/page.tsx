@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
 import { createProductReview, getMediaUrl, getProductBySlug, type Product } from "@/lib/api";
@@ -34,7 +34,8 @@ function StarPicker({
   );
 }
 
-export default function ProductDetailPage({ params }: { params: { slug: string } }) {
+export default function ProductDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = use(params);
   const { token, user } = useAuth();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,7 +52,7 @@ export default function ProductDetailPage({ params }: { params: { slug: string }
     setLoading(true);
     setError(null);
 
-    void getProductBySlug(params.slug)
+    void getProductBySlug(slug)
       .then((item) => {
         if (!alive) return;
         setProduct(item);
@@ -68,7 +69,7 @@ export default function ProductDetailPage({ params }: { params: { slug: string }
     return () => {
       alive = false;
     };
-  }, [params.slug]);
+  }, [slug]);
 
   const gallery = useMemo(() => product?.images ?? [], [product]);
 
@@ -239,3 +240,8 @@ export default function ProductDetailPage({ params }: { params: { slug: string }
     </div>
   );
 }
+
+
+
+
+
