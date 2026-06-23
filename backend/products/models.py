@@ -272,6 +272,7 @@ class ProductImage(models.Model):
         return f"{self.product.title} image {self.sort_order}"
 
 
+
 class ProductReview(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="reviews")
     reviewer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="product_reviews")
@@ -290,3 +291,18 @@ class ProductReview(models.Model):
 
     def __str__(self):
         return f"{self.product.title} review by {self.reviewer}"
+
+
+class ProductView(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="views")
+    viewer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="product_views")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["product", "viewer"], name="unique_view_per_user_per_product"),
+        ]
+
+    def __str__(self):
+        return f"{self.product.title} viewed by {self.viewer}"

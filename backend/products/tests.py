@@ -4,7 +4,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 import json
 from rest_framework.test import APIClient
 
-from products.models import AttributeDefinition, AttributeOption, Category, Country, Location, Product
+from products.models import AttributeDefinition, AttributeOption, Category, Country, Location, Product, ProductView
 from users.models import User
 
 
@@ -210,3 +210,34 @@ class ProductCreateTests(TestCase):
         detail_response = self.client.get(f"/api/products/{product.slug}/")
         self.assertEqual(detail_response.status_code, 200)
         self.assertEqual(detail_response.data["average_rating"], 5.0)
+
+    def test_product_detail_records_one_view_per_authenticated_user(self):
+        self.client.force_login(self.user)
+        category = Category.objects.get(full_path="Electronics & Gadgets > Mobile Phones & Tablets > Smartphones > Android Phones")
+        country = Country.objects.get(name="Kenya")
+        location = Location.objects.get(country=country, full_path="Nairobi > Nairobi")
+
+        product = Product.objects.create(
+            owner=self.user,
+            category=category,
+            country=country,
+            location=location,
+            title="Samsung Galaxy S24",
+            description="Brand new, sealed box.",
+            price="95000",
+            currency="KES",
+            negotiable=True,
+            discount_percent=10,
+            condition="new",
+            custom_fields={},
+        )
+
+        response_1 = self.client.get(f"/api/products/{product.slug}/")
+        response_2 = self.client.get(f"/api/products/{product.slug}/")
+
+        self.assertEqual(response_1.status_code, 200)
+        self.assertEqual(response_2.status_code, 200)
+        self.assertEqual(ProductView.objects.filter(product=product, viewer=self.user).count(), 1)
+        self.assertEqual(ProductView.objects.filter(product=product).count(), 1)
+        self.assertEqual(response_2.data["view_count"], 1)
+

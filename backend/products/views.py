@@ -5,7 +5,7 @@ from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from products.models import AttributeDefinition, Category, Country, Location, Product
+from products.models import AttributeDefinition, Category, Country, Location, Product, ProductView
 from products.serializers import (
     AttributeDefinitionSerializer,
     CategorySerializer,
@@ -69,6 +69,8 @@ class ProductDetailView(APIView):
 
     def get(self, request, slug):
         product = get_object_or_404(Product, slug=slug, is_active=True)
+        if request.user.is_authenticated:
+            ProductView.objects.get_or_create(product=product, viewer=request.user)
         product = (
             Product.objects.select_related("owner", "category", "country", "location")
             .prefetch_related("images", "reviews__reviewer", "attribute_values__definition", "attribute_values__option")
@@ -86,6 +88,7 @@ class ProductReviewCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         review = serializer.save()
         return Response(ProductReviewCreateSerializer(review, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
 
 
 

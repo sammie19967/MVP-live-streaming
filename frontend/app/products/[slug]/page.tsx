@@ -135,6 +135,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
                 {product.average_rating ? `${product.average_rating} / 5` : "No reviews yet"}
               </span>
               <span className="status-pill">{product.review_count} review(s)</span>
+              <span className="status-pill">{product.view_count} view(s)</span>
               <span className="status-pill">{product.negotiable ? "Negotiable" : "Fixed price"}</span>
             </div>
             <p className="lede">{product.description}</p>

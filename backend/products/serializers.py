@@ -10,6 +10,7 @@ from products.models import (
     ProductAttributeValue,
     ProductImage,
     ProductReview,
+    ProductView,
 )
 from users.serializers import UserSerializer
 
@@ -112,6 +113,7 @@ class ProductSerializer(serializers.ModelSerializer):
     attribute_values = ProductAttributeValueSerializer(many=True, read_only=True)
     average_rating = serializers.SerializerMethodField()
     review_count = serializers.SerializerMethodField()
+    view_count = serializers.SerializerMethodField()
     effective_price = serializers.SerializerMethodField()
 
     class Meta:
@@ -140,6 +142,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "attribute_values",
             "average_rating",
             "review_count",
+            "view_count",
             "effective_price",
         ]
         read_only_fields = [
@@ -154,6 +157,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "attribute_values",
             "average_rating",
             "review_count",
+            "view_count",
             "effective_price",
         ]
 
@@ -165,6 +169,9 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def get_review_count(self, obj):
         return obj.reviews.filter(is_approved=True).count()
+
+    def get_view_count(self, obj):
+        return obj.views.count()
 
     def get_effective_price(self, obj):
         return float(obj.discounted_price)
@@ -309,6 +316,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             lineage.append(current)
             current = current.parent
         return lineage
+
 
 
 
