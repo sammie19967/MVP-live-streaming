@@ -71,6 +71,27 @@ class ProductReviewSerializer(serializers.ModelSerializer):
         fields = ["id", "reviewer", "rating", "title", "body", "is_approved", "created_at"]
 
 
+class ProductReviewCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductReview
+        fields = ["rating", "title", "body"]
+
+    def create(self, validated_data):
+        product = self.context["product"]
+        reviewer = self.context["request"].user
+        review, _ = ProductReview.objects.update_or_create(
+            product=product,
+            reviewer=reviewer,
+            defaults={
+                "rating": validated_data["rating"],
+                "title": validated_data.get("title", ""),
+                "body": validated_data.get("body", ""),
+                "is_approved": True,
+            },
+        )
+        return review
+
+
 class ProductAttributeValueSerializer(serializers.ModelSerializer):
     definition = AttributeDefinitionSerializer(read_only=True)
     option = AttributeOptionSerializer(read_only=True)

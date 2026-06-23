@@ -12,6 +12,12 @@ function formatPrice(product: Product) {
   return `${product.currency} ${value.toLocaleString()}`;
 }
 
+function renderStars(value: number | null) {
+  if (!value) return "No rating";
+  const rounded = Math.round(value);
+  return `${"★".repeat(rounded)}${"☆".repeat(5 - rounded)} ${value.toFixed(1)}`;
+}
+
 export function ProductList() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -132,7 +138,7 @@ export function ProductList() {
                 </div>
                 <div>
                   <dt>Rating</dt>
-                  <dd>{product.average_rating ? `${product.average_rating} / 5` : "No reviews yet"}</dd>
+                  <dd>{renderStars(product.average_rating)}</dd>
                 </div>
               </dl>
               <div className="cta-row">

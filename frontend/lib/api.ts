@@ -165,6 +165,12 @@ export type Product = {
   effective_price: number;
 };
 
+export type ReviewPayload = {
+  rating: number;
+  title: string;
+  body: string;
+};
+
 
 export type RegisterPayload = {
   username: string;
@@ -537,6 +543,27 @@ export async function getProducts() {
   });
 
   return parseResponse<Product[]>(response);
+}
+
+export async function getProductBySlug(slug: string) {
+  const response = await fetch(`${API_BASE_URL}/api/products/${slug}/`, {
+    cache: "no-store",
+  });
+
+  return parseResponse<Product>(response);
+}
+
+export async function createProductReview(token: string, slug: string, payload: ReviewPayload) {
+  const response = await fetch(`${API_BASE_URL}/api/products/${slug}/reviews/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Token ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return parseResponse<ProductReview>(response);
 }
 
 export function getMediaUrl(url: string | null): string | null {

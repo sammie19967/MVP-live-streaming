@@ -165,3 +165,48 @@ class ProductCreateTests(TestCase):
         product = Product.objects.get(title="Samsung Galaxy S24")
         self.assertEqual(product.images.count(), 1)
         self.assertTrue(product.images.first().image.name.startswith("product_images/"))
+
+    def test_create_product_review_updates_average_rating(self):
+        self.client.force_login(self.user)
+        category = Category.objects.get(full_path="Electronics & Gadgets > Mobile Phones & Tablets > Smartphones > Android Phones")
+        country = Country.objects.get(name="Kenya")
+        location = Location.objects.get(country=country, full_path="Nairobi > Nairobi")
+        brand_def = AttributeDefinition.objects.get(category=category, code="brand")
+        ram_def = AttributeDefinition.objects.get(category=category, code="ram")
+        storage_def = AttributeDefinition.objects.get(category=category, code="storage")
+        brand_opt = AttributeOption.objects.get(definition=brand_def, value="samsung")
+        ram_opt = AttributeOption.objects.get(definition=ram_def, value="8-gb")
+        storage_opt = AttributeOption.objects.get(definition=storage_def, value="128-gb")
+
+        product = Product.objects.create(
+            owner=self.user,
+            category=category,
+            country=country,
+            location=location,
+            title="Samsung Galaxy S24",
+            description="Brand new, sealed box.",
+            price="95000",
+            currency="KES",
+            negotiable=True,
+            discount_percent=10,
+            condition="new",
+            custom_fields={},
+        )
+        product.custom_fields = {"brand": "Samsung"}
+        product.save(update_fields=["custom_fields"])
+
+        response = self.client.post(
+            f"/api/products/{product.slug}/reviews/",
+            json.dumps({
+                "rating": 5,
+                "title": "Excellent",
+                "body": "Great seller and quick delivery.",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(product.reviews.count(), 1)
+        detail_response = self.client.get(f"/api/products/{product.slug}/")
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.data["average_rating"], 5.0)

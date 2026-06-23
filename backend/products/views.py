@@ -11,6 +11,7 @@ from products.serializers import (
     CountrySerializer,
     LocationSerializer,
     ProductCreateSerializer,
+    ProductReviewCreateSerializer,
     ProductSerializer,
 )
 
@@ -60,3 +61,26 @@ class ProductListView(APIView):
             .prefetch_related("images", "reviews")
         )
         return Response(ProductSerializer(products, many=True, context={"request": request}).data)
+
+
+class ProductDetailView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, slug):
+        product = (
+            Product.objects.select_related("owner", "category", "country", "location")
+            .prefetch_related("images", "reviews__reviewer", "attribute_values__definition", "attribute_values__option")
+            .get(slug=slug, is_active=True)
+        )
+        return Response(ProductSerializer(product, context={"request": request}).data)
+
+
+class ProductReviewCreateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, slug):
+        product = Product.objects.get(slug=slug, is_active=True)
+        serializer = ProductReviewCreateSerializer(data=request.data, context={"request": request, "product": product})
+        serializer.is_valid(raise_exception=True)
+        review = serializer.save()
+        return Response(ProductReviewCreateSerializer(review, context={"request": request}).data, status=status.HTTP_201_CREATED)
