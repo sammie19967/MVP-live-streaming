@@ -224,6 +224,21 @@ main {
   border-color: rgba(232, 93, 4, 0.5);
 }
 
+.field-select {
+  width: 100%;
+  min-height: 48px;
+  padding: 0.8rem 0.95rem;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--foreground);
+}
+
+.field-select:focus {
+  outline: 2px solid rgba(232, 93, 4, 0.2);
+  border-color: rgba(232, 93, 4, 0.5);
+}
+
 .password-field {
   position: relative;
 }

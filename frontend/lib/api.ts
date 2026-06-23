@@ -75,6 +75,96 @@ export type DMThread = {
   unread_count: number;
 };
 
+export type Country = {
+  id: number;
+  name: string;
+  slug: string;
+  code: string;
+};
+
+export type Category = {
+  id: number;
+  name: string;
+  slug: string;
+  parent: number | null;
+  level: number;
+  full_path: string;
+};
+
+export type Location = {
+  id: number;
+  name: string;
+  slug: string;
+  kind: string;
+  level: number;
+  full_path: string;
+  parent: number | null;
+  country: number;
+};
+
+export type AttributeOption = {
+  id: number;
+  label: string;
+  value: string;
+  sort_order: number;
+};
+
+export type AttributeDefinition = {
+  id: number;
+  name: string;
+  code: string;
+  category: number;
+  data_type: "text" | "number" | "boolean" | "select";
+  is_required: boolean;
+  is_filterable: boolean;
+  help_text: string;
+  sort_order: number;
+  options: AttributeOption[];
+};
+
+export type ProductImage = {
+  id: number;
+  image: string;
+  alt_text: string;
+  sort_order: number;
+  created_at: string;
+};
+
+export type ProductReview = {
+  id: number;
+  reviewer: User;
+  rating: number;
+  title: string;
+  body: string;
+  is_approved: boolean;
+  created_at: string;
+};
+
+export type Product = {
+  id: number;
+  owner: User;
+  category: Category;
+  country: Country | null;
+  location: Location | null;
+  title: string;
+  slug: string;
+  description: string;
+  price: string;
+  currency: string;
+  negotiable: boolean;
+  discount_percent: number;
+  condition: "new" | "used" | "refurbished";
+  custom_fields: Record<string, unknown>;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  images: ProductImage[];
+  reviews: ProductReview[];
+  average_rating: number | null;
+  review_count: number;
+  effective_price: number;
+};
+
 
 export type RegisterPayload = {
   username: string;
@@ -367,6 +457,58 @@ export async function getUsers(token: string, options?: { onlineOnly?: boolean }
   });
 
   return parseResponse<User[]>(response);
+}
+
+export async function getProductMeta(token: string) {
+  const response = await fetch(`${API_BASE_URL}/api/products/meta/`, {
+    headers: {
+      Authorization: `Token ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  return parseResponse<{
+    countries: Country[];
+    categories: Category[];
+    locations: Location[];
+    attributes: AttributeDefinition[];
+  }>(response);
+}
+
+export async function createProduct(
+  token: string,
+  payload: {
+    category: number;
+    country: number;
+    location: number;
+    title: string;
+    description: string;
+    price: string;
+    currency: string;
+    negotiable: boolean;
+    discount_percent: number;
+    condition: "new" | "used" | "refurbished";
+    custom_fields: Record<string, unknown>;
+    attribute_values: Array<{
+      definition: number;
+      option?: number | null;
+      value_text?: string;
+      value_number?: number;
+      value_boolean?: boolean;
+    }>;
+    image_urls: string[];
+  },
+) {
+  const response = await fetch(`${API_BASE_URL}/api/products/create/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Token ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return parseResponse<Product>(response);
 }
 
 export function getMediaUrl(url: string | null): string | null {

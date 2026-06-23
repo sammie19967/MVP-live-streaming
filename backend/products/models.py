@@ -134,6 +134,69 @@ class Product(models.Model):
         return self.title
 
 
+class AttributeDefinition(models.Model):
+    class DataType(models.TextChoices):
+        TEXT = "text", "Text"
+        NUMBER = "number", "Number"
+        BOOLEAN = "boolean", "Boolean"
+        SELECT = "select", "Select"
+
+    name = models.CharField(max_length=120)
+    code = models.SlugField(max_length=140)
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="attribute_definitions")
+    data_type = models.CharField(max_length=20, choices=DataType.choices)
+    is_required = models.BooleanField(default=False)
+    is_filterable = models.BooleanField(default=True)
+    help_text = models.CharField(max_length=240, blank=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["category__full_path", "sort_order", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["category", "code"], name="unique_attribute_code_per_category"),
+        ]
+
+    def __str__(self):
+        return f"{self.category.full_path}: {self.name}"
+
+
+class AttributeOption(models.Model):
+    definition = models.ForeignKey(AttributeDefinition, on_delete=models.CASCADE, related_name="options")
+    label = models.CharField(max_length=120)
+    value = models.SlugField(max_length=140)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["sort_order", "label"]
+        constraints = [
+            models.UniqueConstraint(fields=["definition", "value"], name="unique_attribute_option_value"),
+        ]
+
+    def __str__(self):
+        return f"{self.definition.name}: {self.label}"
+
+
+class ProductAttributeValue(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="attribute_values")
+    definition = models.ForeignKey(AttributeDefinition, on_delete=models.CASCADE, related_name="product_values")
+    option = models.ForeignKey(AttributeOption, on_delete=models.SET_NULL, null=True, blank=True, related_name="product_values")
+    value_text = models.CharField(max_length=255, blank=True)
+    value_number = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    value_boolean = models.BooleanField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["product", "definition"], name="unique_attribute_value_per_product"),
+        ]
+
+    def __str__(self):
+        return f"{self.product.title} - {self.definition.name}"
+
+
 class Location(models.Model):
     class Kind(models.TextChoices):
         COUNTY = "county", "County"

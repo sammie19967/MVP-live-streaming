@@ -1,6 +1,16 @@
 from django.contrib import admin
 
-from products.models import Category, Country, Location, Product, ProductImage, ProductReview
+from products.models import (
+    AttributeDefinition,
+    AttributeOption,
+    Category,
+    Country,
+    Location,
+    Product,
+    ProductAttributeValue,
+    ProductImage,
+    ProductReview,
+)
 
 
 @admin.register(Country)
@@ -23,6 +33,33 @@ class LocationAdmin(admin.ModelAdmin):
     list_display = ("full_path", "country", "kind", "level", "parent", "is_active")
     list_filter = ("country", "kind", "level", "is_active")
     search_fields = ("name", "full_path", "slug", "country__name")
+
+
+class AttributeOptionInline(admin.TabularInline):
+    model = AttributeOption
+    extra = 0
+
+
+@admin.register(AttributeDefinition)
+class AttributeDefinitionAdmin(admin.ModelAdmin):
+    list_display = ("name", "code", "category", "data_type", "is_required", "is_filterable", "sort_order", "is_active")
+    list_filter = ("data_type", "is_required", "is_filterable", "is_active", "category")
+    search_fields = ("name", "code", "category__full_path")
+    prepopulated_fields = {"code": ("name",)}
+    inlines = [AttributeOptionInline]
+
+
+@admin.register(AttributeOption)
+class AttributeOptionAdmin(admin.ModelAdmin):
+    list_display = ("label", "definition", "value", "sort_order", "is_active")
+    list_filter = ("is_active", "definition__category")
+    search_fields = ("label", "value", "definition__name")
+
+
+@admin.register(ProductAttributeValue)
+class ProductAttributeValueAdmin(admin.ModelAdmin):
+    list_display = ("product", "definition", "option", "value_text", "value_number", "value_boolean")
+    search_fields = ("product__title", "definition__name", "value_text")
 
 
 class ProductImageInline(admin.TabularInline):
