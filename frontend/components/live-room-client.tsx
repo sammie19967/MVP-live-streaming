@@ -21,6 +21,7 @@ import { useAuth } from "@/components/auth-provider";
 import {
   buildWebSocketUrl,
   endLiveSession,
+  getMediaUrl,
   getLiveComments,
   getLiveSession,
   getLiveToken,
@@ -48,6 +49,19 @@ type ParticipantMetadata = {
   handRaised?: boolean;
   role?: "creator" | "viewer";
 };
+
+function formatAttachmentSize(size: number | null) {
+  if (!size) return "";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getDMPreview(message: DirectMessage | null) {
+  if (!message) return "No messages yet";
+  if (message.body) return message.body;
+  return message.attachment_name ? `Attachment: ${message.attachment_name}` : "Attachment";
+}
 
 function parseParticipantMetadata(metadata?: string): ParticipantMetadata {
   if (!metadata) {
@@ -374,8 +388,11 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
   const [dmThreads, setDmThreads] = useState<DMThread[]>([]);
   const [activeDmUser, setActiveDmUser] = useState<User | null>(null);
   const [dmBody, setDmBody] = useState("");
+  const [dmReplyTarget, setDmReplyTarget] = useState<DirectMessage | null>(null);
+  const [dmAttachment, setDmAttachment] = useState<File | null>(null);
   const [dmSubmitting, setDmSubmitting] = useState(false);
   const chatSocketRef = useRef<WebSocket | null>(null);
+  const dmFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const requestedRole = searchParams.get("role") === "creator" ? "creator" : "viewer";
   const activeSessionId = session?.id;
@@ -723,7 +740,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
 
   async function handleDmSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!token || !dmBody.trim()) {
+    if (!token || (!dmBody.trim() && !dmAttachment)) {
       return;
     }
 
@@ -740,8 +757,16 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
 
     setDmSubmitting(true);
     try {
-      const response = await postDM(token, recipientId, dmBody.trim());
+      const response = await postDM(token, recipientId, dmBody.trim(), {
+        parentId: dmReplyTarget?.id ?? null,
+        attachment: dmAttachment,
+      });
       setDmBody("");
+      setDmReplyTarget(null);
+      setDmAttachment(null);
+      if (dmFileInputRef.current) {
+        dmFileInputRef.current.value = "";
+      }
       setDms((current) => {
         if (current.some((d) => d.id === response.id)) {
           return current;
@@ -771,9 +796,141 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
     } catch (e) {
       console.error("Error sending DM:", e);
       setError(e instanceof Error ? e.message : "Failed to send private message.");
-    } finally {
+  } finally {
       setDmSubmitting(false);
     }
+  }
+
+  function renderDMPayload(dm: DirectMessage) {
+    const attachmentUrl = getMediaUrl(dm.attachment_url || dm.attachment);
+    const fileName = dm.attachment_name || "Attachment";
+
+    return (
+      <>
+        {dm.body ? <p style={{ wordBreak: "break-word", fontSize: "0.9rem" }}>{dm.body}</p> : null}
+        {attachmentUrl && dm.attachment_content_type.startsWith("image/") ? (
+          <a href={attachmentUrl} rel="noreferrer" target="_blank" style={{ display: "block", marginTop: dm.body ? "0.5rem" : 0 }}>
+            <img
+              alt={fileName}
+              src={attachmentUrl}
+              style={{ width: "100%", maxHeight: "180px", objectFit: "cover", borderRadius: "12px", border: "1px solid var(--line)" }}
+            />
+          </a>
+        ) : attachmentUrl ? (
+          <a
+            href={attachmentUrl}
+            rel="noreferrer"
+            target="_blank"
+            style={{
+              display: "flex",
+              gap: "0.5rem",
+              alignItems: "center",
+              marginTop: dm.body ? "0.5rem" : 0,
+              padding: "0.5rem",
+              borderRadius: "10px",
+              border: "1px solid var(--line)",
+              background: "rgba(255,255,255,0.58)",
+              color: "inherit",
+              fontSize: "0.78rem",
+            }}
+          >
+            <span>File</span>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fileName}</span>
+            <span style={{ color: "var(--muted)", flexShrink: 0 }}>{formatAttachmentSize(dm.attachment_size)}</span>
+          </a>
+        ) : null}
+      </>
+    );
+  }
+
+  function renderDMMessage(dm: DirectMessage) {
+    const isMine = dm.sender.id === user?.id;
+
+    return (
+      <div
+        key={dm.id}
+        style={{
+          alignSelf: isMine ? "flex-end" : "flex-start",
+          background: isMine ? "var(--accent-soft)" : "rgba(255, 255, 255, 0.72)",
+          color: isMine ? "var(--accent-strong)" : "var(--foreground)",
+          padding: "0.6rem 0.9rem",
+          borderRadius: "16px",
+          maxWidth: "85%",
+          border: "1px solid var(--line)",
+          marginLeft: dm.parent_id ? "1rem" : 0,
+        }}
+      >
+        {dm.parent_id ? <span className="muted" style={{ display: "block", fontSize: "0.72rem", marginBottom: "0.3rem" }}>Reply</span> : null}
+        {renderDMPayload(dm)}
+        <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", fontSize: "0.65rem", color: "var(--muted)", marginTop: "0.35rem" }}>
+          <button
+            className="reply-btn"
+            onClick={() => setDmReplyTarget(dm)}
+            style={{ fontSize: "0.65rem" }}
+            type="button"
+          >
+            Reply
+          </button>
+          <span>
+            {new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(dm.created_at))}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  function renderDMComposer(placeholder: string, buttonText: string) {
+    return (
+      <form className="stack" onSubmit={handleDmSubmit}>
+        {dmReplyTarget ? (
+          <div className="reply-banner">
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              Replying to {dmReplyTarget.sender.profile?.display_name || dmReplyTarget.sender.username}: {getDMPreview(dmReplyTarget)}
+            </span>
+            <button className="reply-banner__cancel" onClick={() => setDmReplyTarget(null)} type="button">x</button>
+          </div>
+        ) : null}
+        {dmAttachment ? (
+          <div className="reply-banner">
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {dmAttachment.name} {formatAttachmentSize(dmAttachment.size)}
+            </span>
+            <button
+              className="reply-banner__cancel"
+              onClick={() => {
+                setDmAttachment(null);
+                if (dmFileInputRef.current) dmFileInputRef.current.value = "";
+              }}
+              type="button"
+            >
+              x
+            </button>
+          </div>
+        ) : null}
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <input
+            accept="image/*,.gif,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+            onChange={(event) => setDmAttachment(event.target.files?.[0] ?? null)}
+            ref={dmFileInputRef}
+            style={{ display: "none" }}
+            type="file"
+          />
+          <button className="ghost-button" onClick={() => dmFileInputRef.current?.click()} style={{ minHeight: "48px", padding: "0 0.85rem" }} type="button">
+            Attach
+          </button>
+          <div className="field" style={{ flex: 1 }}>
+            <input
+              onChange={(e) => setDmBody(e.target.value)}
+              placeholder={dmAttachment ? "Add a note..." : placeholder}
+              value={dmBody}
+            />
+          </div>
+        </div>
+        <button className="button" disabled={dmSubmitting || (!dmBody.trim() && !dmAttachment)} type="submit">
+          {dmSubmitting ? "Sending..." : buttonText}
+        </button>
+      </form>
+    );
   }
 
 
@@ -1111,7 +1268,12 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
                         <button
                           className="ghost-button"
                           style={{ minHeight: "32px", height: "32px", padding: "0 0.75rem", fontSize: "0.85rem" }}
-                          onClick={() => setActiveDmUser(null)}
+                          onClick={() => {
+                            setActiveDmUser(null);
+                            setDmReplyTarget(null);
+                            setDmAttachment(null);
+                            setDmBody("");
+                          }}
                           type="button"
                         >
                           ← Back
@@ -1123,25 +1285,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
 
                       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1rem", paddingRight: "4px" }}>
                         {dms.length ? (
-                          dms.map((dm) => (
-                            <div
-                              key={dm.id}
-                              style={{
-                                alignSelf: dm.sender.id === user?.id ? "flex-end" : "flex-start",
-                                background: dm.sender.id === user?.id ? "var(--accent-soft)" : "rgba(255, 255, 255, 0.72)",
-                                color: dm.sender.id === user?.id ? "var(--accent-strong)" : "var(--foreground)",
-                                padding: "0.6rem 0.9rem",
-                                borderRadius: "16px",
-                                maxWidth: "85%",
-                                border: "1px solid var(--line)"
-                              }}
-                            >
-                              <p style={{ wordBreak: "break-word", fontSize: "0.9rem" }}>{dm.body}</p>
-                              <div style={{ fontSize: "0.65rem", color: "var(--muted)", textAlign: "right", marginTop: "0.2rem" }}>
-                                {new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(dm.created_at))}
-                              </div>
-                            </div>
-                          ))
+                          dms.map((dm) => renderDMMessage(dm))
                         ) : (
                           <div className="empty-stage" style={{ padding: "1rem 0" }}>
                             <p className="section-copy">No messages yet. Send a message to start the conversation.</p>
@@ -1149,22 +1293,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
                         )}
                       </div>
 
-                      <form className="stack" onSubmit={handleDmSubmit}>
-                        <div className="field">
-                          <input
-                            onChange={(e) => setDmBody(e.target.value)}
-                            placeholder="Type a private reply..."
-                            value={dmBody}
-                          />
-                        </div>
-                        <button
-                          className="button"
-                          disabled={dmSubmitting || !dmBody.trim()}
-                          type="submit"
-                        >
-                          {dmSubmitting ? "Sending..." : "Send Message"}
-                        </button>
-                      </form>
+                      {renderDMComposer("Type a private reply...", "Send Message")}
                     </div>
                   ) : (
                     /* Creator viewing all DM threads */
@@ -1177,7 +1306,12 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
                           dmThreads.map((thread) => (
                             <div
                               key={thread.user.id}
-                              onClick={() => setActiveDmUser(thread.user)}
+                              onClick={() => {
+                                setActiveDmUser(thread.user);
+                                setDmReplyTarget(null);
+                                setDmAttachment(null);
+                                setDmBody("");
+                              }}
                               style={{
                                 display: "flex",
                                 alignItems: "center",
@@ -1222,7 +1356,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
                                   whiteSpace: "nowrap",
                                   marginTop: "0.1rem"
                                 }}>
-                                  {thread.last_message ? thread.last_message.body : "No messages yet"}
+                                  {getDMPreview(thread.last_message)}
                                 </p>
                               </div>
                             </div>
@@ -1246,25 +1380,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
 
                     <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1rem", paddingRight: "4px" }}>
                       {dms.length ? (
-                        dms.map((dm) => (
-                          <div
-                            key={dm.id}
-                            style={{
-                              alignSelf: dm.sender.id === user?.id ? "flex-end" : "flex-start",
-                              background: dm.sender.id === user?.id ? "var(--accent-soft)" : "rgba(255, 255, 255, 0.72)",
-                              color: dm.sender.id === user?.id ? "var(--accent-strong)" : "var(--foreground)",
-                              padding: "0.6rem 0.9rem",
-                              borderRadius: "16px",
-                              maxWidth: "85%",
-                              border: "1px solid var(--line)"
-                            }}
-                          >
-                            <p style={{ wordBreak: "break-word", fontSize: "0.9rem" }}>{dm.body}</p>
-                            <div style={{ fontSize: "0.65rem", color: "var(--muted)", textAlign: "right", marginTop: "0.2rem" }}>
-                              {new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(dm.created_at))}
-                            </div>
-                          </div>
-                        ))
+                        dms.map((dm) => renderDMMessage(dm))
                       ) : (
                         <div className="empty-stage" style={{ padding: "1rem 0" }}>
                           <p className="section-copy">Send a message to chat privately with the host.</p>
@@ -1272,22 +1388,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
                       )}
                     </div>
 
-                    <form className="stack" onSubmit={handleDmSubmit}>
-                      <div className="field">
-                        <input
-                          onChange={(e) => setDmBody(e.target.value)}
-                          placeholder="Type a private message..."
-                          value={dmBody}
-                        />
-                      </div>
-                      <button
-                        className="button"
-                        disabled={dmSubmitting || !dmBody.trim()}
-                        type="submit"
-                      >
-                        {dmSubmitting ? "Sending..." : "Send DM"}
-                      </button>
-                    </form>
+                    {renderDMComposer("Type a private message...", "Send DM")}
                   </div>
                 )}
               </div>

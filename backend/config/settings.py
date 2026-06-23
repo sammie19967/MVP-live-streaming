@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     'channels',
     'users',
     'live',
+    'products',
 ]
 
 MIDDLEWARE = [

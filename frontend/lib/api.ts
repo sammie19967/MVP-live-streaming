@@ -104,15 +104,28 @@ function deriveWebSocketBaseUrl(httpBaseUrl: string) {
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const responseText = await response.text();
-  const data = responseText ? JSON.parse(responseText) : null;
+  let data: unknown = null;
+
+  if (responseText) {
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      const snippet = responseText.replace(/\s+/g, " ").trim().slice(0, 140);
+      throw new Error(
+        `Request failed with ${response.status} ${response.statusText}: ${snippet || "Non-JSON response."}`,
+      );
+    }
+  }
 
   if (!response.ok) {
-    const detail =
-      data?.detail ||
-      Object.values(data || {})
+    const errorData = data as { detail?: string } | Record<string, unknown> | null;
+    const detailValue =
+      (errorData && "detail" in errorData ? errorData.detail : null) ||
+      Object.values(errorData || {})
         .flat()
         .join(" ") ||
       "Request failed.";
+    const detail = String(detailValue);
     throw new Error(detail);
   }
 
