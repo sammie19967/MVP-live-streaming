@@ -2,18 +2,22 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status
 from rest_framework.authtoken.models import Token
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
 from users.models import DirectMessage, Follow, User
+from users.presence import get_online_user_ids
 from users.serializers import (
     DirectMessageSerializer,
     LoginSerializer,
     RegisterSerializer,
     UserSerializer,
 )
+
+MAX_DM_ATTACHMENT_SIZE = 20 * 1024 * 1024
 
 
 def broadcast_dm(sender_id, recipient_id, dm_data):
@@ -118,6 +122,7 @@ class FollowUserView(APIView):
 
 class DirectMessageView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def get(self, request):
         with_user_id = request.query_params.get("with_user_id")
@@ -147,18 +152,29 @@ class DirectMessageView(APIView):
             | (Q(sender=with_user) & Q(recipient=request.user))
         ).order_by("created_at")
 
-        serializer = DirectMessageSerializer(messages, many=True)
+        serializer = DirectMessageSerializer(
+            messages,
+            many=True,
+            context={"request": request},
+        )
         return Response(serializer.data)
 
     def post(self, request):
         recipient_id = request.data.get("recipient_id")
         body = request.data.get("body", "")
+        parent_id = request.data.get("parent_id")
+        attachment = request.FILES.get("attachment")
         if isinstance(body, str):
             body = body.strip()
 
-        if not recipient_id or not body:
+        if not recipient_id or (not body and not attachment):
             return Response(
-                {"detail": "recipient_id and body are required."},
+                {"detail": "recipient_id and either body or attachment are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if attachment and attachment.size > MAX_DM_ATTACHMENT_SIZE:
+            return Response(
+                {"detail": "Attachment must be 20MB or smaller."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -174,13 +190,36 @@ class DirectMessageView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        parent = None
+        if parent_id not in (None, ""):
+            try:
+                parent = DirectMessage.objects.get(id=parent_id)
+            except (DirectMessage.DoesNotExist, ValueError, TypeError):
+                return Response(
+                    {"detail": "Parent message not found."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            parent_user_ids = {parent.sender_id, parent.recipient_id}
+            expected_user_ids = {request.user.id, recipient.id}
+            if parent_user_ids != expected_user_ids:
+                return Response(
+                    {"detail": "Parent message must be in this DM thread."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         dm = DirectMessage.objects.create(
             sender=request.user,
             recipient=recipient,
             body=body,
+            parent=parent,
+            attachment=attachment,
+            attachment_name=getattr(attachment, "name", "") if attachment else "",
+            attachment_content_type=getattr(attachment, "content_type", "") if attachment else "",
+            attachment_size=getattr(attachment, "size", None) if attachment else None,
         )
 
-        dm_data = DirectMessageSerializer(dm).data
+        dm_data = DirectMessageSerializer(dm, context={"request": request}).data
 
         # Real-time WebSocket broadcast
         broadcast_dm(request.user.id, recipient.id, dm_data)
@@ -227,7 +266,10 @@ class DirectMessageThreadsView(APIView):
             threads.append(
                 {
                     "user": UserSerializer(partner).data,
-                    "last_message": DirectMessageSerializer(last_msg).data if last_msg else None,
+                    "last_message": DirectMessageSerializer(
+                        last_msg,
+                        context={"request": request},
+                    ).data if last_msg else None,
                     "unread_count": unread_count,
                 }
             )
@@ -247,6 +289,11 @@ class UserListView(APIView):
     def get(self, request):
         # Exclude current user from the list
         users = User.objects.exclude(id=request.user.id).select_related("profile")
+        if request.query_params.get("online_only") in {"1", "true", "True"}:
+            user_ids = users.values_list("id", flat=True)
+            online_user_ids = get_online_user_ids(user_ids)
+            users = users.filter(id__in=online_user_ids)
+
         serializer = UserSerializer(users, many=True)
         return Response(serializer.data)
 

@@ -2,6 +2,7 @@ from django.contrib.auth import authenticate
 from rest_framework import serializers
 
 from users.models import DirectMessage, Follow, Profile, User
+from users.presence import is_user_online
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -13,13 +14,26 @@ class ProfileSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     profile = ProfileSerializer(read_only=True)
     follower_count = serializers.SerializerMethodField()
+    is_online = serializers.SerializerMethodField()
 
     def get_follower_count(self, obj):
         return obj.follower_relationships.count()
 
+    def get_is_online(self, obj):
+        return is_user_online(obj.id)
+
     class Meta:
         model = User
-        fields = ["id", "username", "email", "is_creator", "created_at", "profile", "follower_count"]
+        fields = [
+            "id",
+            "username",
+            "email",
+            "is_creator",
+            "created_at",
+            "profile",
+            "follower_count",
+            "is_online",
+        ]
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -59,9 +73,49 @@ class FollowSerializer(serializers.ModelSerializer):
 class DirectMessageSerializer(serializers.ModelSerializer):
     sender = UserSerializer(read_only=True)
     recipient = UserSerializer(read_only=True)
+    parent_id = serializers.PrimaryKeyRelatedField(
+        queryset=DirectMessage.objects.all(),
+        source="parent",
+        required=False,
+        allow_null=True,
+        write_only=False,
+    )
+    attachment_url = serializers.SerializerMethodField()
 
     class Meta:
         model = DirectMessage
-        fields = ["id", "sender", "recipient", "body", "created_at", "is_read"]
-        read_only_fields = ["id", "sender", "recipient", "created_at", "is_read"]
+        fields = [
+            "id",
+            "sender",
+            "recipient",
+            "body",
+            "parent_id",
+            "attachment",
+            "attachment_url",
+            "attachment_name",
+            "attachment_content_type",
+            "attachment_size",
+            "created_at",
+            "is_read",
+        ]
+        read_only_fields = [
+            "id",
+            "sender",
+            "recipient",
+            "attachment_url",
+            "attachment_name",
+            "attachment_content_type",
+            "attachment_size",
+            "created_at",
+            "is_read",
+        ]
 
+    def get_attachment_url(self, obj):
+        if not obj.attachment:
+            return None
+
+        request = self.context.get("request")
+        url = obj.attachment.url
+        if request is not None:
+            return request.build_absolute_uri(url)
+        return url

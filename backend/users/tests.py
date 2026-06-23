@@ -1,10 +1,21 @@
 from datetime import timedelta
 
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from users.models import DirectMessage, Follow, User
+from users.presence import mark_user_online
+
+
+TEST_CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "users-tests",
+    }
+}
 
 
 class AuthFlowTests(APITestCase):
@@ -134,3 +145,142 @@ class DirectMessageTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_user_can_send_multilevel_dm_replies(self):
+        root = DirectMessage.objects.create(
+            sender=self.alice,
+            recipient=self.bob,
+            body="root",
+        )
+        first_reply = DirectMessage.objects.create(
+            sender=self.bob,
+            recipient=self.alice,
+            body="reply",
+            parent=root,
+        )
+        self.client.force_authenticate(user=self.alice)
+
+        response = self.client.post(
+            "/api/users/dms/",
+            {
+                "recipient_id": self.bob.id,
+                "body": "nested reply",
+                "parent_id": first_reply.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["parent_id"], first_reply.id)
+        self.assertEqual(DirectMessage.objects.get(id=response.data["id"]).parent_id, first_reply.id)
+
+    def test_dm_reply_parent_must_belong_to_same_thread(self):
+        outside = DirectMessage.objects.create(
+            sender=self.cara,
+            recipient=self.alice,
+            body="outside",
+        )
+        self.client.force_authenticate(user=self.alice)
+
+        response = self.client.post(
+            "/api/users/dms/",
+            {
+                "recipient_id": self.bob.id,
+                "body": "wrong thread",
+                "parent_id": outside.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_user_can_send_attachment_dm_without_body(self):
+        self.client.force_authenticate(user=self.alice)
+        attachment = SimpleUploadedFile(
+            "reply.gif",
+            b"GIF89a",
+            content_type="image/gif",
+        )
+
+        response = self.client.post(
+            "/api/users/dms/",
+            {"recipient_id": self.bob.id, "attachment": attachment},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["body"], "")
+        self.assertEqual(response.data["attachment_name"], "reply.gif")
+        self.assertEqual(response.data["attachment_content_type"], "image/gif")
+        self.assertEqual(response.data["attachment_size"], 6)
+        self.assertTrue(response.data["attachment_url"])
+
+    def test_user_can_send_document_attachment_with_reply(self):
+        parent = DirectMessage.objects.create(
+            sender=self.bob,
+            recipient=self.alice,
+            body="please review",
+        )
+        self.client.force_authenticate(user=self.alice)
+        attachment = SimpleUploadedFile(
+            "brief.pdf",
+            b"%PDF-1.4",
+            content_type="application/pdf",
+        )
+
+        response = self.client.post(
+            "/api/users/dms/",
+            {
+                "recipient_id": self.bob.id,
+                "body": "attached",
+                "parent_id": parent.id,
+                "attachment": attachment,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["parent_id"], parent.id)
+        self.assertEqual(response.data["attachment_name"], "brief.pdf")
+        self.assertEqual(response.data["attachment_content_type"], "application/pdf")
+
+
+@override_settings(CACHES=TEST_CACHES)
+class UserListPresenceTests(APITestCase):
+    def setUp(self):
+        self.alice = User.objects.create_user(
+            username="presence-alice",
+            email="presence-alice@example.com",
+            password="supersecret123",
+        )
+        self.bob = User.objects.create_user(
+            username="presence-bob",
+            email="presence-bob@example.com",
+            password="supersecret123",
+        )
+        self.cara = User.objects.create_user(
+            username="presence-cara",
+            email="presence-cara@example.com",
+            password="supersecret123",
+        )
+
+    def test_user_list_includes_online_flag(self):
+        mark_user_online(self.bob.id)
+        self.client.force_authenticate(user=self.alice)
+
+        response = self.client.get("/api/users/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        bob = next(user for user in response.data if user["id"] == self.bob.id)
+        cara = next(user for user in response.data if user["id"] == self.cara.id)
+        self.assertTrue(bob["is_online"])
+        self.assertFalse(cara["is_online"])
+
+    def test_user_list_can_filter_to_online_users(self):
+        mark_user_online(self.bob.id)
+        self.client.force_authenticate(user=self.alice)
+
+        response = self.client.get("/api/users/?online_only=1")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([user["id"] for user in response.data], [self.bob.id])

@@ -12,6 +12,7 @@ export type User = {
   created_at: string;
   profile: Profile;
   follower_count: number;
+  is_online: boolean;
 };
 
 export type AuthResponse = {
@@ -58,6 +59,12 @@ export type DirectMessage = {
   sender: User;
   recipient: User;
   body: string;
+  parent_id: number | null;
+  attachment: string | null;
+  attachment_url: string | null;
+  attachment_name: string;
+  attachment_content_type: string;
+  attachment_size: number | null;
   created_at: string;
   is_read: boolean;
 };
@@ -289,14 +296,38 @@ export async function getDMs(token: string, withUserId: number | string) {
   return parseResponse<DirectMessage[]>(response);
 }
 
-export async function postDM(token: string, recipientId: number | string, body: string) {
+export async function postDM(
+  token: string,
+  recipientId: number | string,
+  body: string,
+  options?: { parentId?: number | null; attachment?: File | null },
+) {
+  const attachment = options?.attachment ?? null;
+  const parentId = options?.parentId ?? null;
+  const requestBody = attachment
+    ? (() => {
+        const formData = new FormData();
+        formData.append("recipient_id", String(recipientId));
+        formData.append("body", body);
+        formData.append("attachment", attachment);
+        if (parentId != null) {
+          formData.append("parent_id", String(parentId));
+        }
+        return formData;
+      })()
+    : JSON.stringify({ recipient_id: recipientId, body, ...(parentId != null ? { parent_id: parentId } : {}) });
+
   const response = await fetch(`${API_BASE_URL}/api/users/dms/`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Token ${token}`,
-    },
-    body: JSON.stringify({ recipient_id: recipientId, body }),
+    headers: attachment
+      ? {
+          Authorization: `Token ${token}`,
+        }
+      : {
+          "Content-Type": "application/json",
+          Authorization: `Token ${token}`,
+        },
+    body: requestBody,
   });
 
   return parseResponse<DirectMessage>(response);
@@ -313,8 +344,9 @@ export async function getDMThreads(token: string) {
   return parseResponse<DMThread[]>(response);
 }
 
-export async function getUsers(token: string) {
-  const response = await fetch(`${API_BASE_URL}/api/users/`, {
+export async function getUsers(token: string, options?: { onlineOnly?: boolean }) {
+  const query = options?.onlineOnly ? "?online_only=1" : "";
+  const response = await fetch(`${API_BASE_URL}/api/users/${query}`, {
     headers: {
       Authorization: `Token ${token}`,
     },
@@ -332,4 +364,3 @@ export function getMediaUrl(url: string | null): string | null {
   const cleanUrl = url.startsWith("/") ? url : `/${url}`;
   return `${API_BASE_URL}${cleanUrl}`;
 }
-

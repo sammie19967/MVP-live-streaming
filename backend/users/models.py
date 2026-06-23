@@ -57,7 +57,18 @@ class DirectMessage(models.Model):
         on_delete=models.CASCADE,
         related_name="received_dms",
     )
-    body = models.TextField(max_length=1000)
+    body = models.TextField(max_length=1000, blank=True)
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="replies",
+    )
+    attachment = models.FileField(upload_to="dm_attachments/", null=True, blank=True)
+    attachment_name = models.CharField(max_length=255, blank=True)
+    attachment_content_type = models.CharField(max_length=120, blank=True)
+    attachment_size = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     is_read = models.BooleanField(default=False)
 

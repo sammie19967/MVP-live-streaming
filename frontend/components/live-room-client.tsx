@@ -557,12 +557,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
     };
 
     socket.onerror = (err) => {
-      console.error("Room WebSocket error:", {
-        type: err.type,
-        target: err.target?.url || err.target,
-        readyState: err.target?.readyState,
-        message: err.message,
-      });
+      console.error("Room WebSocket error:", err);
       if (!liveEndedMessage) {
         setError("Room socket disconnected. Refresh to reconnect.");
       }
@@ -717,12 +712,7 @@ export function LiveRoomClient({ sessionId }: LiveRoomClientProps) {
     };
 
     socket.onerror = (err) => {
-      console.error("Chat WebSocket error:", {
-        type: err.type,
-        target: err.target?.url || err.target,
-        readyState: err.target?.readyState,
-        message: err.message,
-      });
+      console.error("Chat WebSocket error:", err);
     };
 
     return () => {

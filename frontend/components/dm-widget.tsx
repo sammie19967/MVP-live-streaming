@@ -8,11 +8,14 @@ import {
   getDMs,
   getDMThreads,
   getUsers,
+  getMediaUrl,
   postDM,
   type DirectMessage,
   type DMThread,
   type User,
 } from "@/lib/api";
+
+type MessageNode = DirectMessage & { replies: MessageNode[] };
 
 function getInitials(name: string) {
   const words = name.trim().split(/\s+/).filter(Boolean);
@@ -47,6 +50,46 @@ function WidgetAvatar({ name, avatarUrl }: { name: string; avatarUrl?: string })
   );
 }
 
+function formatAttachmentSize(size: number | null) {
+  if (!size) return "";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isImageAttachment(message: DirectMessage) {
+  return message.attachment_content_type.startsWith("image/");
+}
+
+function getMessagePreview(message: DirectMessage | null) {
+  if (!message) return "No messages yet";
+  if (message.body) return message.body;
+  return message.attachment_name ? `Attachment: ${message.attachment_name}` : "Attachment";
+}
+
+function buildMessageTree(messages: DirectMessage[]): MessageNode[] {
+  const nodes = new Map<number, MessageNode>();
+  const roots: MessageNode[] = [];
+
+  messages.forEach((message) => {
+    nodes.set(message.id, { ...message, replies: [] });
+  });
+
+  messages.forEach((message) => {
+    const node = nodes.get(message.id);
+    if (!node) return;
+
+    const parent = message.parent_id ? nodes.get(message.parent_id) : null;
+    if (parent) {
+      parent.replies.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+
+  return roots;
+}
+
 export function DirectMessageWidget({
   isOpen,
   setIsOpen,
@@ -65,11 +108,14 @@ export function DirectMessageWidget({
   const [usersList, setUsersList] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [msgBody, setMsgBody] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [replyTarget, setReplyTarget] = useState<DirectMessage | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const chatSocketRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Keep refs updated for the socket event handler to prevent closure stales
   const activePartnerRef = useRef(activePartner);
@@ -84,6 +130,7 @@ export function DirectMessageWidget({
   const totalUnread = useMemo(() => {
     return threads.reduce((sum, t) => sum + t.unread_count, 0);
   }, [threads]);
+  const messageTree = useMemo(() => buildMessageTree(messages), [messages]);
 
   // Auto-scroll messages list to bottom
   const scrollToBottom = () => {
@@ -205,12 +252,7 @@ export function DirectMessageWidget({
     };
 
     socket.onerror = (err) => {
-      console.error("DM Widget WebSocket error:", {
-        type: err.type,
-        target: err.target?.url || err.target,
-        readyState: err.target?.readyState,
-        message: err.message,
-      });
+      console.error("DM Widget WebSocket error:", err);
     };
 
     return () => {
@@ -224,7 +266,7 @@ export function DirectMessageWidget({
     setScreen("search");
     if (!token) return;
     try {
-      const list = await getUsers(token);
+      const list = await getUsers(token, { onlineOnly: true });
       setUsersList(list);
     } catch (err) {
       console.error("Error loading users:", err);
@@ -243,18 +285,29 @@ export function DirectMessageWidget({
     setActivePartner(partner);
     setScreen("chat");
     setSearchQuery("");
+    setReplyTarget(null);
+    setSelectedFile(null);
+    setMsgBody("");
   };
 
   const handleSendMessage = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!token || !activePartner || !msgBody.trim()) return;
+    if (!token || !activePartner || (!msgBody.trim() && !selectedFile)) return;
 
     setSubmitting(true);
     setError(null);
 
     try {
-      const response = await postDM(token, activePartner.id, msgBody.trim());
+      const response = await postDM(token, activePartner.id, msgBody.trim(), {
+        parentId: replyTarget?.id ?? null,
+        attachment: selectedFile,
+      });
       setMsgBody("");
+      setSelectedFile(null);
+      setReplyTarget(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
       setMessages((current) => {
         if (current.some((d) => d.id === response.id)) return current;
         return [...current, response];
@@ -291,6 +344,111 @@ export function DirectMessageWidget({
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const renderAttachment = (msg: DirectMessage) => {
+    const url = getMediaUrl(msg.attachment_url || msg.attachment);
+    if (!url) return null;
+    const fileName = msg.attachment_name || "Attachment";
+    const size = formatAttachmentSize(msg.attachment_size);
+
+    if (isImageAttachment(msg)) {
+      return (
+        <a href={url} rel="noreferrer" target="_blank" style={{ display: "block", marginTop: msg.body ? "0.45rem" : 0 }}>
+          <img
+            alt={fileName}
+            src={url}
+            style={{
+              width: "100%",
+              maxHeight: "180px",
+              objectFit: "cover",
+              borderRadius: "12px",
+              border: "1px solid var(--line)",
+            }}
+          />
+        </a>
+      );
+    }
+
+    return (
+      <a
+        href={url}
+        rel="noreferrer"
+        target="_blank"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5rem",
+          marginTop: msg.body ? "0.45rem" : 0,
+          padding: "0.45rem 0.55rem",
+          borderRadius: "10px",
+          border: "1px solid var(--line)",
+          background: "rgba(255, 255, 255, 0.58)",
+          color: "inherit",
+          fontSize: "0.72rem",
+          minWidth: 0,
+        }}
+      >
+        <span aria-hidden="true">File</span>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fileName}</span>
+        {size && <span style={{ color: "var(--muted)", flexShrink: 0 }}>{size}</span>}
+      </a>
+    );
+  };
+
+  const renderMessageNode = (msg: MessageNode, depth = 0): React.ReactNode => {
+    const isMine = msg.sender.id === user?.id;
+    const senderName = msg.sender.profile?.display_name || msg.sender.username;
+
+    return (
+      <div key={msg.id} style={{ display: "grid", gap: "0.4rem", marginLeft: depth ? `${Math.min(depth, 4) * 14}px` : 0 }}>
+        <div
+          style={{
+            alignSelf: isMine ? "flex-end" : "flex-start",
+            background: isMine ? "var(--accent-soft)" : "rgba(255, 255, 255, 0.72)",
+            color: isMine ? "var(--accent-strong)" : "var(--foreground)",
+            padding: "0.5rem 0.75rem",
+            borderRadius: "14px",
+            maxWidth: depth ? "92%" : "80%",
+            border: "1px solid var(--line)",
+            justifySelf: isMine ? "end" : "start",
+          }}
+        >
+          {depth > 0 && (
+            <div style={{ color: "var(--muted)", fontSize: "0.62rem", marginBottom: "0.25rem" }}>
+              Reply from {senderName}
+            </div>
+          )}
+          {msg.body && <p style={{ wordBreak: "break-word", fontSize: "0.82rem", margin: 0 }}>{msg.body}</p>}
+          {renderAttachment(msg)}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "0.5rem",
+              fontSize: "0.6rem",
+              color: "var(--muted)",
+              marginTop: "0.35rem",
+            }}
+          >
+            <button
+              onClick={() => setReplyTarget(msg)}
+              style={{ background: "none", border: "none", color: "inherit", padding: 0, fontSize: "0.6rem" }}
+              type="button"
+            >
+              Reply
+            </button>
+            <span>
+              {new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(
+                new Date(msg.created_at)
+              )}
+            </span>
+          </div>
+        </div>
+        {msg.replies.map((reply) => renderMessageNode(reply, depth + 1))}
+      </div>
+    );
   };
 
   if (!token || !user) return null;
@@ -537,7 +695,7 @@ export function DirectMessageWidget({
                             marginTop: "2px",
                           }}
                         >
-                          {t.last_message ? t.last_message.body : "No messages yet"}
+                          {getMessagePreview(t.last_message)}
                         </p>
                       </div>
                     </div>
@@ -564,35 +722,8 @@ export function DirectMessageWidget({
                     paddingRight: "4px",
                   }}
                 >
-                  {messages.length ? (
-                    messages.map((msg) => (
-                      <div
-                        key={msg.id}
-                        style={{
-                          alignSelf: msg.sender.id === user?.id ? "flex-end" : "flex-start",
-                          background: msg.sender.id === user?.id ? "var(--accent-soft)" : "rgba(255, 255, 255, 0.72)",
-                          color: msg.sender.id === user?.id ? "var(--accent-strong)" : "var(--foreground)",
-                          padding: "0.5rem 0.8rem",
-                          borderRadius: "16px",
-                          maxWidth: "80%",
-                          border: "1px solid var(--line)",
-                        }}
-                      >
-                        <p style={{ wordBreak: "break-word", fontSize: "0.82rem", margin: 0 }}>{msg.body}</p>
-                        <div
-                          style={{
-                            fontSize: "0.6rem",
-                            color: "var(--muted)",
-                            textAlign: "right",
-                            marginTop: "2px",
-                          }}
-                        >
-                          {new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(
-                            new Date(msg.created_at)
-                          )}
-                        </div>
-                      </div>
-                    ))
+                  {messageTree.length ? (
+                    messageTree.map((msg) => renderMessageNode(msg))
                   ) : (
                     <div style={{ textAlign: "center", padding: "2rem 0", color: "var(--muted)" }}>
                       <p style={{ fontSize: "0.8rem" }}>Say hello to start the conversation!</p>
@@ -601,18 +732,84 @@ export function DirectMessageWidget({
                   <div ref={messagesEndRef} />
                 </div>
 
+                {replyTarget && (
+                  <div className="reply-banner" style={{ marginBottom: "0.5rem" }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      Replying to {replyTarget.sender.profile?.display_name || replyTarget.sender.username}:{" "}
+                      {getMessagePreview(replyTarget)}
+                    </span>
+                    <button className="reply-banner__cancel" onClick={() => setReplyTarget(null)} type="button">
+                      x
+                    </button>
+                  </div>
+                )}
+
+                {selectedFile && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "0.5rem",
+                      marginBottom: "0.5rem",
+                      padding: "0.45rem 0.6rem",
+                      borderRadius: "12px",
+                      border: "1px solid var(--line)",
+                      background: "rgba(255, 255, 255, 0.58)",
+                      fontSize: "0.75rem",
+                    }}
+                  >
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {selectedFile.name} {formatAttachmentSize(selectedFile.size)}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setSelectedFile(null);
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                      }}
+                      style={{ background: "none", border: "none", color: "var(--muted)", padding: "0 0.25rem" }}
+                      type="button"
+                    >
+                      x
+                    </button>
+                  </div>
+                )}
+
                 <form onSubmit={handleSendMessage} style={{ display: "flex", gap: "0.5rem", marginTop: "auto" }}>
+                  <input
+                    accept="image/*,.gif,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+                    onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+                    ref={fileInputRef}
+                    style={{ display: "none" }}
+                    type="file"
+                  />
+                  <button
+                    aria-label="Attach file"
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{
+                      width: "36px",
+                      height: "36px",
+                      borderRadius: "12px",
+                      border: "1px solid var(--line)",
+                      background: "rgba(255, 255, 255, 0.72)",
+                      color: "var(--muted)",
+                      flexShrink: 0,
+                    }}
+                    type="button"
+                  >
+                    +
+                  </button>
                   <div className="field" style={{ flex: 1 }}>
                     <input
                       onChange={(e) => setMsgBody(e.target.value)}
-                      placeholder="Type a message..."
+                      placeholder={selectedFile ? "Add a note..." : "Type a message..."}
                       style={{ minHeight: "36px", borderRadius: "12px", padding: "0.5rem 0.75rem", fontSize: "0.85rem" }}
                       value={msgBody}
                     />
                   </div>
                   <button
                     className="button"
-                    disabled={submitting || !msgBody.trim()}
+                    disabled={submitting || (!msgBody.trim() && !selectedFile)}
                     style={{ minHeight: "36px", borderRadius: "12px", padding: "0 0.85rem", fontSize: "0.85rem" }}
                     type="submit"
                   >
@@ -627,7 +824,7 @@ export function DirectMessageWidget({
                 <div className="field" style={{ marginBottom: "0.75rem" }}>
                   <input
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search by username..."
+                    placeholder="Search online users..."
                     style={{ minHeight: "36px", borderRadius: "12px", padding: "0.5rem" }}
                     value={searchQuery}
                   />
@@ -660,12 +857,22 @@ export function DirectMessageWidget({
                             {u.profile?.display_name || u.username}
                           </strong>
                           <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>@{u.username}</span>
+                          <span
+                            style={{
+                              color: "var(--success)",
+                              display: "block",
+                              fontSize: "0.7rem",
+                              marginTop: "2px",
+                            }}
+                          >
+                            Online
+                          </span>
                         </div>
                       </div>
                     ))
                   ) : (
                     <div style={{ textAlign: "center", padding: "2rem 0", color: "var(--muted)" }}>
-                      <p style={{ fontSize: "0.8rem" }}>No users found.</p>
+                      <p style={{ fontSize: "0.8rem" }}>No online users found.</p>
                     </div>
                   )}
                 </div>
