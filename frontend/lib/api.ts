@@ -511,6 +511,14 @@ export async function createProduct(
   return parseResponse<{ message: string; product: Product }>(response);
 }
 
+export async function getProducts() {
+  const response = await fetch(`${API_BASE_URL}/api/products/`, {
+    cache: "no-store",
+  });
+
+  return parseResponse<Product[]>(response);
+}
+
 export function getMediaUrl(url: string | null): string | null {
   if (!url) return null;
   if (url.startsWith("http://") || url.startsWith("https://")) {

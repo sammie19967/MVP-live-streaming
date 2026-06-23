@@ -18,6 +18,9 @@ export function AuthShell() {
           <Link className="ghost-button" href="/">
             Home
           </Link>
+          <Link className="ghost-button" href="/products">
+            Products
+          </Link>
           <Link className="ghost-button" href="/products/new">
             Sell
           </Link>
