@@ -143,6 +143,7 @@ export type ProductReview = {
 export type Product = {
   id: number;
   owner: User;
+  owner_username?: string;
   category: Category;
   country: Country | null;
   location: Location | null;
@@ -574,3 +575,5 @@ export function getMediaUrl(url: string | null): string | null {
   const cleanUrl = url.startsWith("/") ? url : `/${url}`;
   return `${API_BASE_URL}${cleanUrl}`;
 }
+
+

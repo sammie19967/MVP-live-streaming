@@ -103,6 +103,7 @@ class ProductAttributeValueSerializer(serializers.ModelSerializer):
 
 class ProductSerializer(serializers.ModelSerializer):
     owner = UserSerializer(read_only=True)
+    owner_username = serializers.CharField(source="owner.username", read_only=True)
     category = CategorySerializer(read_only=True)
     country = CountrySerializer(read_only=True)
     location = LocationSerializer(read_only=True)
@@ -118,6 +119,7 @@ class ProductSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "owner",
+            "owner_username",
             "category",
             "country",
             "location",
@@ -143,6 +145,7 @@ class ProductSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "owner",
+            "owner_username",
             "slug",
             "created_at",
             "updated_at",
@@ -306,3 +309,6 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             lineage.append(current)
             current = current.parent
         return lineage
+
+
+

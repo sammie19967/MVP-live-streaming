@@ -179,7 +179,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
               </div>
               <div>
                 <dt>Owner</dt>
-                <dd>{product.owner.username}</dd>
+                <dd>{product.owner_username ?? product.owner.username}</dd>
               </div>
             </dl>
           </section>
@@ -240,6 +240,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ slug: 
     </div>
   );
 }
+
 
 
 
