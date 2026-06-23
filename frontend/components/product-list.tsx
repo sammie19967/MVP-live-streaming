@@ -86,15 +86,31 @@ export function ProductList() {
 
       <div className="grid two-col">
         {sortedProducts.map((product) => {
-          const image = getMediaUrl(product.images[0]?.image ?? null);
+          const images = product.images
+            .map((image) => getMediaUrl(image.image))
+            .filter((url): url is string => Boolean(url));
           return (
             <article className="panel stack" key={product.id}>
-              {image ? (
-                <img
-                  alt={product.images[0]?.alt_text || product.title}
-                  src={image}
-                  style={{ width: "100%", aspectRatio: "16 / 10", objectFit: "cover", borderRadius: "12px" }}
-                />
+              {images.length ? (
+                <div className="grid" style={{ gridTemplateColumns: images.length > 1 ? "2fr 1fr" : "1fr", gap: "0.5rem" }}>
+                  <img
+                    alt={product.images[0]?.alt_text || product.title}
+                    src={images[0]}
+                    style={{ width: "100%", aspectRatio: "16 / 10", objectFit: "cover", borderRadius: "12px" }}
+                  />
+                  {images.length > 1 ? (
+                    <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "0.5rem" }}>
+                      {images.slice(1, 5).map((image, index) => (
+                        <img
+                          key={`${product.id}-${index}`}
+                          alt={`${product.title} gallery ${index + 2}`}
+                          src={image}
+                          style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: "10px" }}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
               <div className="status-row">
                 <h3 className="section-title" style={{ fontSize: "1rem" }}>{product.title}</h3>
@@ -123,6 +139,7 @@ export function ProductList() {
                 <Link className="button" href={`/products/${product.slug}`}>
                   View product
                 </Link>
+                {product.images.length ? <span className="status-pill">{product.images.length} image(s)</span> : null}
                 {product.negotiable ? <span className="status-pill">Negotiable</span> : <span className="status-pill offline">Fixed</span>}
               </div>
             </article>

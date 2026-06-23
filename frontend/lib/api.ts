@@ -496,16 +496,36 @@ export async function createProduct(
       value_number?: number;
       value_boolean?: boolean;
     }>;
+    image_files: File[];
     image_urls: string[];
   },
 ) {
+  const body = new FormData();
+  body.append("category", String(payload.category));
+  body.append("country", String(payload.country));
+  body.append("location", String(payload.location));
+  body.append("title", payload.title);
+  body.append("description", payload.description);
+  body.append("price", payload.price);
+  body.append("currency", payload.currency);
+  body.append("negotiable", String(payload.negotiable));
+  body.append("discount_percent", String(payload.discount_percent));
+  body.append("condition", payload.condition);
+  body.append("custom_fields", JSON.stringify(payload.custom_fields));
+  body.append("attribute_values", JSON.stringify(payload.attribute_values));
+  for (const file of payload.image_files) {
+    body.append("image_files", file);
+  }
+  for (const url of payload.image_urls) {
+    body.append("image_urls", url);
+  }
+
   const response = await fetch(`${API_BASE_URL}/api/products/create/`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
       Authorization: `Token ${token}`,
     },
-    body: JSON.stringify(payload),
+    body,
   });
 
   return parseResponse<{ message: string; product: Product }>(response);

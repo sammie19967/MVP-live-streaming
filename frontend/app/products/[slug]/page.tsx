@@ -67,12 +67,29 @@ export default function ProductDetailPage({ params }: { params: { slug: string }
             {product.title}
           </h1>
           <p className="lede">{product.description}</p>
-          {product.images[0] ? (
-            <img
-              alt={product.images[0].alt_text || product.title}
-              src={getMediaUrl(product.images[0].image) ?? undefined}
-              style={{ width: "100%", aspectRatio: "16 / 9", objectFit: "cover", borderRadius: "12px" }}
-            />
+          {product.images.length ? (
+            <div className="grid" style={{ gridTemplateColumns: product.images.length > 1 ? "2fr 1fr" : "1fr", gap: "0.75rem" }}>
+              <img
+                alt={product.images[0].alt_text || product.title}
+                src={getMediaUrl(product.images[0].image) ?? undefined}
+                style={{ width: "100%", aspectRatio: "16 / 9", objectFit: "cover", borderRadius: "12px" }}
+              />
+              {product.images.length > 1 ? (
+                <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "0.75rem" }}>
+                  {product.images.slice(1).map((image, index) => {
+                    const url = getMediaUrl(image.image);
+                    return url ? (
+                      <img
+                        key={image.id}
+                        alt={image.alt_text || `${product.title} gallery ${index + 2}`}
+                        src={url}
+                        style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: "10px" }}
+                      />
+                    ) : null;
+                  })}
+                </div>
+              ) : null}
+            </div>
           ) : null}
           <dl className="meta-list">
             <div>

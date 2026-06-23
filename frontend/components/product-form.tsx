@@ -68,6 +68,8 @@ export function ProductForm() {
   const [discountPercent, setDiscountPercent] = useState(0);
   const [condition, setCondition] = useState<"new" | "used" | "refurbished">("used");
   const [imageUrls, setImageUrls] = useState("");
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [attributeState, setAttributeState] = useState<Record<number, string>>({});
 
   const categoryTree = useMemo(() => buildTree(categories), [categories]);
@@ -138,6 +140,14 @@ export function ProductForm() {
     Boolean(selectedCountryId) &&
     Boolean(selectedCategory) &&
     Boolean(selectedLocation);
+
+  useEffect(() => {
+    const nextPreviews = imageFiles.map((file) => URL.createObjectURL(file));
+    setImagePreviews(nextPreviews);
+    return () => {
+      nextPreviews.forEach((preview) => URL.revokeObjectURL(preview));
+    };
+  }, [imageFiles]);
 
   async function loadMeta() {
     if (!token) return;
@@ -253,6 +263,7 @@ export function ProductForm() {
         condition,
         custom_fields,
         attribute_values,
+        image_files: imageFiles,
         image_urls: imageUrls
           .split("\n")
           .map((line) => line.trim())
@@ -267,6 +278,8 @@ export function ProductForm() {
       setNegotiable(true);
       setDiscountPercent(0);
       setCondition("used");
+      setImageFiles([]);
+      setImagePreviews([]);
       setImageUrls("");
       setAttributeState({});
       setSelectedCountryId("");
@@ -380,12 +393,41 @@ export function ProductForm() {
           </div>
 
           <div className="field">
+            <label>Images</label>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => setImageFiles(Array.from(e.target.files ?? []))}
+            />
+            <p className="section-copy" style={{ marginTop: "0.45rem" }}>
+              Upload one or more files for the listing gallery.
+            </p>
+            {imagePreviews.length ? (
+              <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "0.65rem" }}>
+                {imagePreviews.map((preview, index) => (
+                  <figure className="stack" key={`${preview}-${index}`} style={{ gap: "0.45rem" }}>
+                    <img
+                      alt={`Selected upload ${index + 1}`}
+                      src={preview}
+                      style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: "10px" }}
+                    />
+                    <figcaption className="section-copy" style={{ fontSize: "0.8rem", margin: 0 }}>
+                      {imageFiles[index]?.name}
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="field">
             <label>Image URLs</label>
             <textarea
               value={imageUrls}
               onChange={(e) => setImageUrls(e.target.value)}
               rows={5}
-              placeholder="One image URL per line"
+              placeholder="Optional fallback: one image URL per line"
               style={{ width: "100%", borderRadius: "16px", border: "1px solid var(--line)", padding: "0.8rem 0.95rem", background: "rgba(255,255,255,0.72)" }}
             />
           </div>

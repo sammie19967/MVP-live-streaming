@@ -147,14 +147,6 @@ class ProductSerializer(serializers.ModelSerializer):
 
 
 class ProductCreateSerializer(serializers.ModelSerializer):
-    image_urls = serializers.ListField(
-        child=serializers.URLField(),
-        required=False,
-        allow_empty=True,
-        write_only=True,
-    )
-    attribute_values = serializers.ListField(required=False, allow_empty=True, write_only=True)
-
     class Meta:
         model = Product
         fields = [
@@ -168,9 +160,6 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             "negotiable",
             "discount_percent",
             "condition",
-            "custom_fields",
-            "attribute_values",
-            "image_urls",
         ]
 
     def validate(self, attrs):
@@ -180,7 +169,7 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"location": "Selected location must belong to the selected country."})
 
         category = attrs.get("category")
-        attribute_values = attrs.get("attribute_values") or []
+        attribute_values = self._load_json_payload("attribute_values", [])
         if category is not None:
             required_definitions = AttributeDefinition.objects.filter(
                 is_active=True,
@@ -202,14 +191,53 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        image_urls = validated_data.pop("image_urls", [])
-        attribute_values = validated_data.pop("attribute_values", [])
-        product = Product.objects.create(owner=self.context["request"].user, **validated_data)
+        request = self.context["request"]
+        custom_fields = self._load_json_payload("custom_fields", {})
+        attribute_values = self._load_json_payload("attribute_values", [])
+        image_urls = self._load_json_payload("image_urls", [])
+        image_files = request.FILES.getlist("image_files")
+        product = Product.objects.create(
+            owner=request.user,
+            custom_fields=custom_fields if isinstance(custom_fields, dict) else {},
+            **validated_data,
+        )
         if attribute_values:
             self._create_attribute_values(product, attribute_values)
+        for index, image_file in enumerate(image_files):
+            ProductImage.objects.create(product=product, image=image_file, sort_order=index)
+        offset = len(image_files)
         for index, image_url in enumerate(image_urls):
-            ProductImage.objects.create(product=product, image=image_url, sort_order=index)
+            ProductImage.objects.create(product=product, image=image_url, sort_order=offset + index)
         return product
+
+    def _load_json_payload(self, key, default):
+        request_data = self.context["request"].data
+        if hasattr(request_data, "getlist"):
+            values = request_data.getlist(key)
+            if len(values) > 1:
+                value = values
+            elif len(values) == 1:
+                value = values[0]
+            else:
+                value = default
+        else:
+            value = request_data.get(key, default)
+        if isinstance(value, (list, tuple)) and len(value) == 1:
+            value = value[0]
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return default
+            import json
+
+            if key == "image_urls":
+                try:
+                    parsed = json.loads(value)
+                except json.JSONDecodeError:
+                    return [value]
+                return parsed if isinstance(parsed, list) else [parsed]
+            return json.loads(value)
+        return value
 
     def _create_attribute_values(self, product, attribute_values):
         definitions = {
