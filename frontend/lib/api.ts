@@ -508,7 +508,7 @@ export async function createProduct(
     body: JSON.stringify(payload),
   });
 
-  return parseResponse<Product>(response);
+  return parseResponse<{ message: string; product: Product }>(response);
 }
 
 export function getMediaUrl(url: string | null): string | null {

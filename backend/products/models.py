@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
@@ -87,7 +89,7 @@ class Product(models.Model):
     title = models.CharField(max_length=180)
     slug = models.SlugField(max_length=220, unique=True)
     description = models.TextField()
-    price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
+    price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
     currency = models.CharField(max_length=8, default="KES")
     negotiable = models.BooleanField(default=True)
     discount_percent = models.PositiveSmallIntegerField(default=0, validators=[MaxValueValidator(100)])
@@ -127,7 +129,7 @@ class Product(models.Model):
     def discounted_price(self):
         if not self.discount_percent:
             return self.price
-        multiplier = (100 - self.discount_percent) / 100
+        multiplier = Decimal(100 - self.discount_percent) / Decimal(100)
         return self.price * multiplier
 
     def __str__(self):

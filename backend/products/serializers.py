@@ -178,6 +178,27 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         location = attrs.get("location")
         if country is not None and location is not None and location.country_id != country.id:
             raise serializers.ValidationError({"location": "Selected location must belong to the selected country."})
+
+        category = attrs.get("category")
+        attribute_values = attrs.get("attribute_values") or []
+        if category is not None:
+            required_definitions = AttributeDefinition.objects.filter(
+                is_active=True,
+                is_required=True,
+                category__in=self._category_lineage(category),
+            ).select_related("category").prefetch_related("options")
+
+            provided_definition_ids = {
+                item.get("definition")
+                for item in attribute_values
+                if isinstance(item, dict) and item.get("definition")
+            }
+
+            missing = [definition.name for definition in required_definitions if definition.id not in provided_definition_ids]
+            if missing:
+                raise serializers.ValidationError(
+                    {"attribute_values": f"Missing required fields: {', '.join(missing)}."}
+                )
         return attrs
 
     def create(self, validated_data):
@@ -205,6 +226,16 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             option_id = item.get("option")
             if option_id:
                 option = definition.options.filter(id=option_id, is_active=True).first()
+            resolved_value = None
+            if option is not None:
+                resolved_value = option.label
+            elif definition.data_type == "text":
+                resolved_value = item.get("value_text", "") or ""
+            elif definition.data_type == "number":
+                resolved_value = item.get("value_number")
+            elif definition.data_type == "boolean":
+                resolved_value = item.get("value_boolean")
+
             ProductAttributeValue.objects.create(
                 product=product,
                 definition=definition,
@@ -213,3 +244,16 @@ class ProductCreateSerializer(serializers.ModelSerializer):
                 value_number=item.get("value_number") or None,
                 value_boolean=item.get("value_boolean") if "value_boolean" in item else None,
             )
+            if resolved_value not in (None, ""):
+                product.custom_fields[definition.code] = resolved_value
+
+        if product.custom_fields:
+            product.save(update_fields=["custom_fields"])
+
+    def _category_lineage(self, category):
+        lineage = []
+        current = category
+        while current is not None:
+            lineage.append(current)
+            current = current.parent
+        return lineage

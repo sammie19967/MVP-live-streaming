@@ -55,6 +55,7 @@ export function ProductForm() {
   const [metaError, setMetaError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [createdProduct, setCreatedProduct] = useState<{ title: string; slug: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [selectedCountryId, setSelectedCountryId] = useState<number | "">("");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
@@ -109,6 +110,34 @@ export function ProductForm() {
     () => findNodeAtPath(locationTree, selectedLocationIds)?.item ?? null,
     [locationTree, selectedLocationIds],
   );
+  const selectedAttributeDefinitions = useMemo(() => {
+    if (!selectedCategory) return [];
+    const categoryIds = new Set<number>();
+    let current: Category | null = selectedCategory;
+    while (current) {
+      categoryIds.add(current.id);
+      current = categories.find((category) => category.id === current?.parent) ?? null;
+    }
+    return attributes.filter((attribute) => categoryIds.has(attribute.category));
+  }, [attributes, categories, selectedCategory]);
+
+  const missingRequiredAttributes = useMemo(
+    () =>
+      selectedAttributeDefinitions
+        .filter((attribute) => attribute.is_required && !attributeState[attribute.id])
+        .map((attribute) => attribute.name),
+    [attributeState, selectedAttributeDefinitions],
+  );
+
+  const hasBasicDraft = Boolean(title.trim() && description.trim() && price.trim());
+  const canSubmit =
+    Boolean(token && user) &&
+    !submitting &&
+    !loadingMeta &&
+    hasBasicDraft &&
+    Boolean(selectedCountryId) &&
+    Boolean(selectedCategory) &&
+    Boolean(selectedLocation);
 
   async function loadMeta() {
     if (!token) return;
@@ -150,8 +179,30 @@ export function ProductForm() {
     setSubmitError(null);
     setSuccessMessage(null);
 
+    const trimmedTitle = title.trim();
+    const trimmedDescription = description.trim();
+    const trimmedPrice = price.trim();
+    const parsedPrice = Number(trimmedPrice);
+
+    if (!trimmedTitle) {
+      setSubmitError("Add a title before publishing.");
+      return;
+    }
+    if (!trimmedDescription) {
+      setSubmitError("Add a description before publishing.");
+      return;
+    }
+    if (!trimmedPrice || Number.isNaN(parsedPrice) || parsedPrice <= 0) {
+      setSubmitError("Enter a valid price before publishing.");
+      return;
+    }
+
     if (!selectedCategory || !selectedLocation || !selectedCountryId) {
       setSubmitError("Pick a country, location, and category before publishing.");
+      return;
+    }
+    if (missingRequiredAttributes.length) {
+      setSubmitError(`Fill in required fields: ${missingRequiredAttributes.join(", ")}.`);
       return;
     }
     const countryId = selectedCountryId;
@@ -187,14 +238,15 @@ export function ProductForm() {
     }>;
 
     setSubmitting(true);
+    setCreatedProduct(null);
     try {
-      const product = await createProduct(authToken, {
+      const response = await createProduct(authToken, {
         category: selectedCategory.id,
         country: countryId,
         location: selectedLocation.id,
-        title,
-        description,
-        price,
+        title: trimmedTitle,
+        description: trimmedDescription,
+        price: trimmedPrice,
         currency,
         negotiable,
         discount_percent: discountPercent,
@@ -206,12 +258,20 @@ export function ProductForm() {
           .map((line) => line.trim())
           .filter(Boolean),
       });
-      setSuccessMessage(`Saved ${product.title}.`);
+      setSuccessMessage(response.message);
+      setCreatedProduct({ title: response.product.title, slug: response.product.slug });
       setTitle("");
       setDescription("");
       setPrice("");
+      setCurrency("KES");
+      setNegotiable(true);
+      setDiscountPercent(0);
+      setCondition("used");
       setImageUrls("");
       setAttributeState({});
+      setSelectedCountryId("");
+      setSelectedCategoryIds([]);
+      setSelectedLocationIds([]);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to create product.");
     } finally {
@@ -221,16 +281,6 @@ export function ProductForm() {
 
   const currentCategories = categoryNodesByParent.get(null) ?? [];
   const currentLocations = locationNodesByParent.get(null) ?? [];
-  const selectedAttributeDefinitions = useMemo(() => {
-    if (!selectedCategory) return [];
-    const categoryIds = new Set<number>();
-    let current: Category | null = selectedCategory;
-    while (current) {
-      categoryIds.add(current.id);
-      current = categories.find((category) => category.id === current?.parent) ?? null;
-    }
-    return attributes.filter((attribute) => categoryIds.has(attribute.category));
-  }, [attributes, categories, selectedCategory]);
 
   return (
     <div className="shell">
@@ -258,9 +308,16 @@ export function ProductForm() {
         </p>
       </section>
 
-      {metaError ? <p className="form-error" style={{ marginTop: "1rem" }}>{metaError}</p> : null}
-      {submitError ? <p className="form-error" style={{ marginTop: "1rem" }}>{submitError}</p> : null}
-      {successMessage ? <p className="form-success" style={{ marginTop: "1rem" }}>{successMessage}</p> : null}
+      <div aria-live="polite" style={{ marginTop: "1rem" }}>
+        {metaError ? <p className="form-error">{metaError}</p> : null}
+        {submitError ? <p className="form-error">{submitError}</p> : null}
+        {successMessage ? <p className="form-success">{successMessage}</p> : null}
+        {createdProduct ? (
+          <p className="form-success" style={{ marginTop: "0.5rem" }}>
+            You can review it at <code>/products/{createdProduct.slug}</code>
+          </p>
+        ) : null}
+      </div>
 
       <form className="grid two-col" onSubmit={handleSubmit} style={{ marginTop: "1.5rem", alignItems: "start" }}>
         <section className="panel stack">
@@ -528,7 +585,7 @@ export function ProductForm() {
             </dl>
           </div>
 
-          <button className="button" disabled={submitting || loadingMeta} type="submit">
+          <button className="button" disabled={!canSubmit} type="submit">
             {submitting ? "Publishing..." : "Publish product"}
           </button>
         </section>

@@ -41,7 +41,13 @@ class ProductCreateView(APIView):
         serializer = ProductCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         product = serializer.save()
-        return Response(ProductSerializer(product).data, status=status.HTTP_201_CREATED)
+        return Response(
+            {
+                "message": f"Product '{product.title}' created successfully.",
+                "product": ProductSerializer(product, context={"request": request}).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class ProductListView(APIView):
