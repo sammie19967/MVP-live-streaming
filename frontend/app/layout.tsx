@@ -15,8 +15,8 @@ const monoFont = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Live MVP",
-  description: "TikTok-style live MVP auth frontend",
+  title: "StreamMVP — Live Streaming Platform",
+  description: "Go live, join live sessions, and engage with your audience in real time.",
 };
 
 export default function RootLayout({
