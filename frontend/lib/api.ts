@@ -185,10 +185,26 @@ export type LoginPayload = {
   password: string;
 };
 
+export type ProductFilters = {
+  q?: string;
+  category?: number | string;
+  country?: number | string;
+  location?: number | string;
+  condition?: "new" | "used" | "refurbished";
+  negotiable?: boolean | "true" | "false";
+  min_price?: string | number;
+  max_price?: string | number;
+  ordering?: "newest" | "oldest" | "price_low" | "price_high";
+};
+
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 const WS_BASE_URL =
   process.env.NEXT_PUBLIC_WS_BASE_URL ?? deriveWebSocketBaseUrl(API_BASE_URL);
+
+function withNgrokHeaders(headers?: HeadersInit) {
+  return headers ?? {};
+}
 
 function deriveWebSocketBaseUrl(httpBaseUrl: string) {
   const url = new URL(httpBaseUrl);
@@ -233,7 +249,9 @@ export async function registerUser(payload: RegisterPayload) {
   const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      ...withNgrokHeaders({
+        "Content-Type": "application/json",
+      }),
     },
     body: JSON.stringify(payload),
   });
@@ -245,7 +263,9 @@ export async function loginUser(payload: LoginPayload) {
   const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      ...withNgrokHeaders({
+        "Content-Type": "application/json",
+      }),
     },
     body: JSON.stringify(payload),
   });
@@ -257,7 +277,9 @@ export async function logoutUser(token: string) {
   const response = await fetch(`${API_BASE_URL}/api/auth/logout`, {
     method: "POST",
     headers: {
-      Authorization: `Token ${token}`,
+      ...withNgrokHeaders({
+        Authorization: `Token ${token}`,
+      }),
     },
   });
 
@@ -270,7 +292,9 @@ export async function getCurrentUser(token: string) {
   const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
     method: "GET",
     headers: {
-      Authorization: `Token ${token}`,
+      ...withNgrokHeaders({
+        Authorization: `Token ${token}`,
+      }),
     },
     cache: "no-store",
   });
@@ -280,6 +304,7 @@ export async function getCurrentUser(token: string) {
 
 export async function getLiveFeed(status: string = "live") {
   const response = await fetch(`${API_BASE_URL}/api/live/feed?status=${status}`, {
+    headers: withNgrokHeaders(),
     cache: "no-store",
   });
 
@@ -288,6 +313,7 @@ export async function getLiveFeed(status: string = "live") {
 
 export async function getLiveSession(sessionId: string | number) {
   const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}`, {
+    headers: withNgrokHeaders(),
     cache: "no-store",
   });
 
@@ -301,7 +327,9 @@ export async function startLiveSession(
   const response = await fetch(`${API_BASE_URL}/api/live/start`, {
     method: "POST",
     headers: {
-      Authorization: `Token ${token}`,
+      ...withNgrokHeaders({
+        Authorization: `Token ${token}`,
+      }),
     },
     body: payload,
   });
@@ -313,7 +341,9 @@ export async function endLiveSession(token: string, sessionId: string | number) 
   const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/end`, {
     method: "POST",
     headers: {
-      Authorization: `Token ${token}`,
+      ...withNgrokHeaders({
+        Authorization: `Token ${token}`,
+      }),
     },
   });
 
@@ -329,7 +359,9 @@ export async function getLiveToken(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Token ${token}`,
+      ...withNgrokHeaders({
+        Authorization: `Token ${token}`,
+      }),
     },
     body: JSON.stringify({ role }),
   });
@@ -339,9 +371,9 @@ export async function getLiveToken(
 
 export async function getLiveComments(token: string, sessionId: string | number) {
   const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/comments`, {
-    headers: {
+    headers: withNgrokHeaders({
       Authorization: `Token ${token}`,
-    },
+    }),
     cache: "no-store",
   });
 
@@ -358,7 +390,9 @@ export async function postLiveComment(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Token ${token}`,
+      ...withNgrokHeaders({
+        Authorization: `Token ${token}`,
+      }),
     },
     body: JSON.stringify({ body, ...(parentId != null ? { parent_id: parentId } : {}) }),
   });
@@ -375,7 +409,9 @@ export async function postLiveReaction(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Token ${token}`,
+      ...withNgrokHeaders({
+        Authorization: `Token ${token}`,
+      }),
     },
     body: JSON.stringify({ type }),
   });
@@ -396,9 +432,9 @@ export async function getDMs(token: string, withUserId: number | string) {
   const response = await fetch(
     `${API_BASE_URL}/api/users/dms/?with_user_id=${withUserId}`,
     {
-      headers: {
+      headers: withNgrokHeaders({
         Authorization: `Token ${token}`,
-      },
+      }),
       cache: "no-store",
     }
   );
@@ -430,13 +466,13 @@ export async function postDM(
   const response = await fetch(`${API_BASE_URL}/api/users/dms/`, {
     method: "POST",
     headers: attachment
-      ? {
+      ? withNgrokHeaders({
           Authorization: `Token ${token}`,
-        }
-      : {
+        })
+      : withNgrokHeaders({
           "Content-Type": "application/json",
           Authorization: `Token ${token}`,
-        },
+        }),
     body: requestBody,
   });
 
@@ -445,9 +481,9 @@ export async function postDM(
 
 export async function getDMThreads(token: string) {
   const response = await fetch(`${API_BASE_URL}/api/users/dms/threads/`, {
-    headers: {
+    headers: withNgrokHeaders({
       Authorization: `Token ${token}`,
-    },
+    }),
     cache: "no-store",
   });
 
@@ -457,9 +493,9 @@ export async function getDMThreads(token: string) {
 export async function getUsers(token: string, options?: { onlineOnly?: boolean }) {
   const query = options?.onlineOnly ? "?online_only=1" : "";
   const response = await fetch(`${API_BASE_URL}/api/users/${query}`, {
-    headers: {
+    headers: withNgrokHeaders({
       Authorization: `Token ${token}`,
-    },
+    }),
     cache: "no-store",
   });
 
@@ -468,9 +504,9 @@ export async function getUsers(token: string, options?: { onlineOnly?: boolean }
 
 export async function getProductMeta(token: string) {
   const response = await fetch(`${API_BASE_URL}/api/products/meta/`, {
-    headers: {
+    headers: withNgrokHeaders({
       Authorization: `Token ${token}`,
-    },
+    }),
     cache: "no-store",
   });
 
@@ -530,7 +566,9 @@ export async function createProduct(
   const response = await fetch(`${API_BASE_URL}/api/products/create/`, {
     method: "POST",
     headers: {
-      Authorization: `Token ${token}`,
+      ...withNgrokHeaders({
+        Authorization: `Token ${token}`,
+      }),
     },
     body,
   });
@@ -540,6 +578,7 @@ export async function createProduct(
 
 export async function getProducts() {
   const response = await fetch(`${API_BASE_URL}/api/products/`, {
+    headers: withNgrokHeaders(),
     cache: "no-store",
   });
 
@@ -548,6 +587,7 @@ export async function getProducts() {
 
 export async function getProductBySlug(slug: string) {
   const response = await fetch(`${API_BASE_URL}/api/products/${slug}/`, {
+    headers: withNgrokHeaders(),
     cache: "no-store",
   });
 
@@ -559,7 +599,9 @@ export async function createProductReview(token: string, slug: string, payload: 
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Token ${token}`,
+      ...withNgrokHeaders({
+        Authorization: `Token ${token}`,
+      }),
     },
     body: JSON.stringify(payload),
   });
@@ -569,11 +611,25 @@ export async function createProductReview(token: string, slug: string, payload: 
 
 export function getMediaUrl(url: string | null): string | null {
   if (!url) return null;
-  if (url.startsWith("http://") || url.startsWith("https://")) {
-    return url;
+  const apiOrigin = new URL(API_BASE_URL).origin;
+  const mediaUrl = new URL(url, apiOrigin);
+
+  if (mediaUrl.origin !== apiOrigin) {
+    return mediaUrl.toString();
   }
-  const cleanUrl = url.startsWith("/") ? url : `/${url}`;
-  return `${API_BASE_URL}${cleanUrl}`;
+
+  if (typeof window === "undefined") {
+    return mediaUrl.toString();
+  }
+
+  const proxiedUrl = new URL("/api/media", window.location.origin);
+  proxiedUrl.searchParams.set("url", mediaUrl.toString());
+  return proxiedUrl.toString();
 }
+
+
+
+
+
 
 

@@ -1,21 +1,46 @@
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
+from corsheaders.defaults import default_headers
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
+load_dotenv(BASE_DIR / ".env.local")
+load_dotenv(BASE_DIR.parent / "frontend" / ".env.local")
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-dev-key")
 DEBUG = os.getenv("DJANGO_DEBUG", "true").lower() == "true"
-ALLOWED_HOSTS = os.getenv(
-    "DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,192.168.1.115"
+backend_origin = os.getenv("backend")
+frontend_origin = os.getenv("frontend")
+
+allowed_hosts = os.getenv(
+    "DJANGO_ALLOWED_HOSTS",
+    "localhost,127.0.0.1,192.168.1.115",
 ).split(",")
-CORS_ALLOWED_ORIGINS = os.getenv(
+if backend_origin:
+    parsed_backend = urlparse(backend_origin)
+    allowed_hosts.append(parsed_backend.hostname or backend_origin)
+ALLOWED_HOSTS = allowed_hosts
+
+cors_allowed_origins = os.getenv(
     "CORS_ALLOWED_ORIGINS",
     "http://localhost:3000,http://127.0.0.1:3000,http://192.168.1.115:3000",
 ).split(",")
+if frontend_origin:
+    cors_allowed_origins.append(frontend_origin)
+CORS_ALLOWED_ORIGINS = cors_allowed_origins
+CORS_ALLOWED_ORIGIN_REGEXES = []
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = list(default_headers)
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://192.168.1.115:3000",
+]
 
 INSTALLED_APPS = [
     'daphne',
@@ -66,7 +91,6 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 ASGI_APPLICATION = 'config.asgi.application'
 
-
 database_engine = os.getenv("POSTGRES_ENGINE", "django.db.backends.sqlite3")
 DATABASES = {
     'default': {
@@ -78,7 +102,6 @@ DATABASES = {
         'PORT': os.getenv('POSTGRES_PORT', ''),
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
@@ -97,7 +120,6 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
-
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/

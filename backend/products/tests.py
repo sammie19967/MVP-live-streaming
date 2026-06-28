@@ -241,3 +241,64 @@ class ProductCreateTests(TestCase):
         self.assertEqual(ProductView.objects.filter(product=product).count(), 1)
         self.assertEqual(response_2.data["view_count"], 1)
 
+
+class ProductListFilterTests(TestCase):
+    def setUp(self):
+        call_command("seed_categories", verbosity=0)
+        call_command("seed_locations", verbosity=0)
+        self.user = User.objects.create_user(
+            username="seller2",
+            email="seller2@example.com",
+            password="supersecret123",
+        )
+        self.country = Country.objects.get(name="Kenya")
+        self.android = Category.objects.get(full_path="Electronics & Gadgets > Mobile Phones & Tablets > Smartphones > Android Phones")
+        self.feature_phone = Category.objects.get(full_path="Electronics & Gadgets > Mobile Phones & Tablets > Feature Phones")
+        self.nairobi = Location.objects.get(country=self.country, full_path="Nairobi > Nairobi")
+        self.kisumu = Location.objects.get(country=self.country, full_path="Kisumu > Kisumu")
+
+        self.phone = Product.objects.create(
+            owner=self.user,
+            category=self.android,
+            country=self.country,
+            location=self.nairobi,
+            title="Samsung Galaxy S24",
+            description="Flagship phone",
+            price="95000",
+            currency="KES",
+            negotiable=True,
+            discount_percent=0,
+            condition="new",
+            custom_fields={},
+        )
+        self.other = Product.objects.create(
+            owner=self.user,
+            category=self.feature_phone,
+            country=self.country,
+            location=self.kisumu,
+            title="Nokia 3310",
+            description="Classic phone",
+            price="4500",
+            currency="KES",
+            negotiable=False,
+            discount_percent=0,
+            condition="used",
+            custom_fields={},
+        )
+
+    def test_product_list_can_filter_by_search_term(self):
+        response = self.client.get("/api/products/?q=samsung")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["id"], self.phone.id)
+
+    def test_product_list_can_filter_by_category(self):
+        response = self.client.get(f"/api/products/?category={self.android.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({item["id"] for item in response.data}, {self.phone.id})
+
+    def test_product_list_can_filter_by_location_and_price(self):
+        response = self.client.get(f"/api/products/?location={self.kisumu.id}&min_price=1000&max_price=5000")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["id"], self.other.id)

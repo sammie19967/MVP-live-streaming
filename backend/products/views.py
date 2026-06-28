@@ -1,4 +1,6 @@
-from django.db.models import Prefetch
+from decimal import Decimal
+
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
@@ -18,13 +20,18 @@ from products.serializers import (
 
 
 class ProductMetaView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get(self, request):
         countries = Country.objects.filter(is_active=True).order_by("name")
         categories = Category.objects.filter(is_active=True).order_by("full_path")
         locations = Location.objects.filter(is_active=True).order_by("full_path")
-        attributes = AttributeDefinition.objects.filter(is_active=True).select_related("category").prefetch_related("options").order_by("category__full_path", "sort_order", "name")
+        attributes = (
+            AttributeDefinition.objects.filter(is_active=True)
+            .select_related("category")
+            .prefetch_related("options")
+            .order_by("category__full_path", "sort_order", "name")
+        )
         return Response(
             {
                 "countries": CountrySerializer(countries, many=True).data,
@@ -61,7 +68,74 @@ class ProductListView(APIView):
             .select_related("owner", "category", "country", "location")
             .prefetch_related("images", "reviews")
         )
+        products = self.apply_filters(products, request)
         return Response(ProductSerializer(products, many=True, context={"request": request}).data)
+
+    def apply_filters(self, queryset, request):
+        params = request.query_params
+
+        query = (params.get("q") or params.get("search") or "").strip()
+        if query:
+            queryset = queryset.filter(
+                Q(title__icontains=query)
+                | Q(description__icontains=query)
+                | Q(category__full_path__icontains=query)
+                | Q(location__full_path__icontains=query)
+                | Q(country__name__icontains=query)
+                | Q(custom_fields__icontains=query)
+            )
+
+        category_id = params.get("category")
+        if category_id:
+            category = Category.objects.filter(id=category_id, is_active=True).first()
+            if category:
+                queryset = queryset.filter(category__full_path__startswith=category.full_path)
+
+        country_id = params.get("country")
+        if country_id:
+            queryset = queryset.filter(country_id=country_id)
+
+        location_id = params.get("location")
+        if location_id:
+            location = Location.objects.filter(id=location_id, is_active=True).first()
+            if location:
+                queryset = queryset.filter(location__full_path__startswith=location.full_path)
+
+        condition = params.get("condition")
+        if condition in Product.Condition.values:
+            queryset = queryset.filter(condition=condition)
+
+        negotiable = params.get("negotiable")
+        if negotiable not in (None, ""):
+            normalized = str(negotiable).strip().lower()
+            if normalized in {"1", "true", "yes"}:
+                queryset = queryset.filter(negotiable=True)
+            elif normalized in {"0", "false", "no"}:
+                queryset = queryset.filter(negotiable=False)
+
+        min_price = self._parse_decimal(params.get("min_price"))
+        max_price = self._parse_decimal(params.get("max_price"))
+        if min_price is not None:
+            queryset = queryset.filter(price__gte=min_price)
+        if max_price is not None:
+            queryset = queryset.filter(price__lte=max_price)
+
+        ordering = (params.get("ordering") or params.get("sort") or "newest").strip()
+        sort_map = {
+            "newest": "-created_at",
+            "oldest": "created_at",
+            "price_low": "price",
+            "price_high": "-price",
+        }
+        return queryset.order_by(sort_map.get(ordering, "-created_at"))
+
+    def _parse_decimal(self, value):
+        if value in (None, ""):
+            return None
+        try:
+            return Decimal(str(value))
+        except Exception:
+            return None
 
 
 class ProductDetailView(APIView):
@@ -88,8 +162,3 @@ class ProductReviewCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         review = serializer.save()
         return Response(ProductReviewCreateSerializer(review, context={"request": request}).data, status=status.HTTP_201_CREATED)
-
-
-
-
-
