@@ -120,6 +120,15 @@ function ConditionBadge({ condition }: { condition: Product["condition"] }) {
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[0.7rem] font-semibold border ${cls}`}>{label}</span>;
 }
 
+function Spinner({ className = "" }: { className?: string }) {
+  return (
+    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.16" strokeWidth="3.5" />
+      <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function StarRating({ value }: { value: number | null }) {
   if (value == null) return <span className="text-white/30 text-xs">No reviews</span>;
 
@@ -627,8 +636,14 @@ export function ProductList() {
       )}
 
       {loading && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {[...Array(8)].map((_, i) => <SkeletonCard key={i} />)}
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 text-sm text-white/70">
+            <Spinner className="h-4 w-4 text-violet-300" />
+            <span>{products.length ? "Refreshing listings..." : "Loading listings..."}</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {[...Array(8)].map((_, i) => <SkeletonCard key={i} />)}
+          </div>
         </div>
       )}
 
@@ -658,8 +673,9 @@ export function ProductList() {
                 type="button"
                 onClick={() => void loadMoreProducts()}
                 disabled={loadingMore}
-                className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white/80 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-xl border border-white/[0.1] bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white/80 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
               >
+                {loadingMore ? <Spinner className="h-4 w-4 text-violet-300" /> : null}
                 {loadingMore ? "Loading more..." : "Load more products"}
               </button>
             ) : (
