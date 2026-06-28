@@ -294,8 +294,8 @@ class ProductListFilterTests(TestCase):
     def test_product_list_can_filter_by_search_term(self):
         response = self.client.get("/api/products/?q=samsung")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["id"], self.phone.id)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["id"], self.phone.id)
 
     def _category_path(self, category):
         ids = []
@@ -308,18 +308,18 @@ class ProductListFilterTests(TestCase):
     def test_product_list_can_filter_by_category(self):
         response = self.client.get(f"/api/products/?category={self.android.id}")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual({item["id"] for item in response.data}, {self.phone.id})
+        self.assertEqual({item["id"] for item in response.data["results"]}, {self.phone.id})
 
     def test_product_list_can_filter_by_category_path(self):
         response = self.client.get(f"/api/products/?category={self._category_path(self.android)}")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual({item["id"] for item in response.data}, {self.phone.id})
+        self.assertEqual({item["id"] for item in response.data["results"]}, {self.phone.id})
 
     def test_product_list_can_filter_by_location_and_price(self):
         response = self.client.get(f"/api/products/?location={self.kisumu.id}&min_price=1000&max_price=5000")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["id"], self.other.id)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["id"], self.other.id)
 
 
 

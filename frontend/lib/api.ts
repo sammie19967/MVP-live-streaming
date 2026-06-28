@@ -196,6 +196,15 @@ export type ProductFilters = {
   min_price?: string | number;
   max_price?: string | number;
   ordering?: "newest" | "oldest" | "price_low" | "price_high";
+  page?: number;
+  page_size?: number;
+};
+
+export type PaginatedResponse<T> = {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
 };
 
 export const API_BASE_URL =
@@ -591,6 +600,8 @@ export async function getProducts(filters?: ProductFilters) {
   if (filters?.min_price != null && filters.min_price !== "") params.set("min_price", String(filters.min_price));
   if (filters?.max_price != null && filters.max_price !== "") params.set("max_price", String(filters.max_price));
   if (filters?.ordering) params.set("ordering", filters.ordering);
+  if (filters?.page != null) params.set("page", String(filters.page));
+  if (filters?.page_size != null) params.set("page_size", String(filters.page_size));
 
   const query = params.toString();
   const response = await fetch(`${API_BASE_URL}/api/products/${query ? `?${query}` : ""}`, {
@@ -598,7 +609,7 @@ export async function getProducts(filters?: ProductFilters) {
     cache: "no-store",
   });
 
-  return parseResponse<Product[]>(response);
+  return parseResponse<PaginatedResponse<Product>>(response);
 }
 export async function getProductBySlug(slug: string) {
   const response = await fetch(`${API_BASE_URL}/api/products/${slug}/`, {

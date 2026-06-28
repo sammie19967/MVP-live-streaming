@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -69,7 +70,11 @@ class ProductListView(APIView):
             .prefetch_related("images", "reviews")
         )
         products = self.apply_filters(products, request)
-        return Response(ProductSerializer(products, many=True, context={"request": request}).data)
+        paginator = PageNumberPagination()
+        paginator.page_size = self._parse_int(request.query_params.get("page_size"), default=24, minimum=1, maximum=96)
+        page = paginator.paginate_queryset(products, request)
+        serializer = ProductSerializer(page, many=True, context={"request": request})
+        return paginator.get_paginated_response(serializer.data)
 
     def apply_filters(self, queryset, request):
         params = request.query_params
@@ -147,6 +152,19 @@ class ProductListView(APIView):
             return Decimal(str(value))
         except Exception:
             return None
+
+    def _parse_int(self, value, default, minimum=None, maximum=None):
+        if value in (None, ""):
+            return default
+        try:
+            parsed = int(str(value))
+        except Exception:
+            return default
+        if minimum is not None:
+            parsed = max(minimum, parsed)
+        if maximum is not None:
+            parsed = min(maximum, parsed)
+        return parsed
 
 
 class ProductDetailView(APIView):

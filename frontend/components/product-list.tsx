@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { getMediaUrl, getProductMeta, getProducts, type Category, type Country, type Location, type Product } from "@/lib/api";
@@ -115,12 +115,46 @@ function ConditionBadge({ condition }: { condition: Product["condition"] }) {
 }
 
 function StarRating({ value }: { value: number | null }) {
-  if (!value) return <span className="text-white/30 text-xs">No reviews</span>;
-  const full = Math.round(value);
+  if (value == null) return <span className="text-white/30 text-xs">No reviews</span>;
+
+  const fullStars = Math.floor(value);
+  const hasHalfStar = value - fullStars >= 0.25 && value - fullStars < 0.75;
+  const roundedStars = hasHalfStar ? fullStars + 0.5 : Math.round(value);
+  const starPath = "M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.957a1 1 0 00.95.69h4.164c.969 0 1.371 1.24.588 1.81l-3.371 2.449a1 1 0 00-.364 1.118l1.286 3.957c.3.921-.755 1.688-1.54 1.118l-3.371-2.45a1 1 0 00-1.175 0l-3.371 2.45c-.784.57-1.838-.197-1.539-1.118l1.285-3.957a1 1 0 00-.364-1.118L2.06 9.384c-.783-.57-.38-1.81.588-1.81h4.164a1 1 0 00.95-.69l1.286-3.957z";
+
   return (
-    <span className="flex items-center gap-1">
-      <span className="text-amber-400 text-sm tracking-tighter">{"?".repeat(full)}<span className="text-white/20">{"?".repeat(5 - full)}</span></span>
-      <span className="text-white/40 text-xs font-mono">{value.toFixed(1)}</span>
+    <span className="flex items-center gap-1" aria-label={`${value.toFixed(1)} out of 5 stars`}>
+      <span className="flex items-center gap-0.5">
+        {Array.from({ length: 5 }, (_, index) => {
+          const starNumber = index + 1;
+          const filled = starNumber <= fullStars;
+          const half = hasHalfStar && starNumber === fullStars + 1;
+          return (
+            <span key={starNumber} className="relative inline-flex h-3.5 w-3.5 shrink-0" aria-hidden="true">
+              <svg className="absolute inset-0 h-3.5 w-3.5 text-white/15" fill="currentColor" viewBox="0 0 20 20">
+                <path d={starPath} />
+              </svg>
+              {filled ? (
+                <svg className="absolute inset-0 h-3.5 w-3.5 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path d={starPath} />
+                </svg>
+              ) : half ? (
+                <>
+                  <svg className="absolute inset-0 h-3.5 w-3.5 text-white/15" fill="currentColor" viewBox="0 0 20 20">
+                    <path d={starPath} />
+                  </svg>
+                  <span className="absolute inset-0 overflow-hidden" style={{ width: "50%" }}>
+                    <svg className="h-3.5 w-3.5 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path d={starPath} />
+                    </svg>
+                  </span>
+                </>
+              ) : null}
+            </span>
+          );
+        })}
+      </span>
+      <span className="text-white/40 text-xs font-mono">{roundedStars.toFixed(1)}</span>
     </span>
   );
 }
@@ -365,12 +399,16 @@ export function ProductList() {
   const searchParams = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nextPage, setNextPage] = useState<number | null>(1);
+  const [hasMore, setHasMore] = useState(true);
   const [countries, setCountries] = useState<Country[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [filters, setFilters] = useState<FilterState>(() => parseFiltersFromSearchParams(new URLSearchParams(searchParams.toString())));
   const [pendingSearch, setPendingSearch] = useState(filters.q);
+  const loadMoreAnchorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setFilters(parseFiltersFromSearchParams(new URLSearchParams(searchParams.toString())));
@@ -413,6 +451,9 @@ export function ProductList() {
     let alive = true;
     setLoading(true);
     setError(null);
+    setProducts([]);
+    setNextPage(1);
+    setHasMore(true);
 
     void getProducts({
       q: filters.q,
@@ -424,10 +465,14 @@ export function ProductList() {
       min_price: filters.min_price,
       max_price: filters.max_price,
       ordering: filters.ordering,
+      page: 1,
+      page_size: 12,
     })
-      .then((items) => {
+      .then((payload) => {
         if (!alive) return;
-        setProducts(items);
+        setProducts(payload.results);
+        setNextPage(payload.next ? 2 : null);
+        setHasMore(Boolean(payload.next));
       })
       .catch((err) => {
         if (!alive) return;
@@ -442,6 +487,51 @@ export function ProductList() {
       alive = false;
     };
   }, [filters]);
+
+  async function loadMoreProducts() {
+    if (!nextPage || loadingMore || loading) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const payload = await getProducts({
+        q: filters.q,
+        category: filters.category,
+        country: filters.country,
+        location: filters.location,
+        condition: filters.condition || undefined,
+        negotiable: filters.negotiable || undefined,
+        min_price: filters.min_price,
+        max_price: filters.max_price,
+        ordering: filters.ordering,
+        page: nextPage,
+        page_size: 12,
+      });
+      setProducts((current) => [...current, ...payload.results]);
+      setNextPage(payload.next ? nextPage + 1 : null);
+      setHasMore(Boolean(payload.next));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load more products.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  useEffect(() => {
+    const sentinel = loadMoreAnchorRef.current;
+    if (!sentinel || !hasMore || loading || loadingMore || !nextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          void loadMoreProducts();
+        }
+      },
+      { rootMargin: "400px 0px 400px 0px" },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loading, loadingMore, nextPage, products.length]);
 
   const resetFilters = () => {
     setPendingSearch("");
@@ -514,7 +604,7 @@ export function ProductList() {
         </div>
 
         <div className="lg:col-span-12 flex flex-wrap items-center justify-between gap-3 pt-1">
-          <p className="text-white/30 text-xs font-mono">{loading ? "Loading..." : `${products.length} listings found`}</p>
+          <p className="text-white/30 text-xs font-mono">{loading ? "Loading..." : `${products.length} listings shown`}</p>
           <button type="button" onClick={resetFilters} className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/[0.08]">
             Reset filters
           </button>
@@ -552,9 +642,25 @@ export function ProductList() {
       )}
 
       {!loading && !error && products.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {products.map((product) => <ProductCard key={product.id} product={product} />)}
-        </div>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {products.map((product) => <ProductCard key={product.id} product={product} />)}
+          </div>
+          <div className="flex flex-col items-center gap-3 pt-4" ref={loadMoreAnchorRef}>
+            {hasMore ? (
+              <button
+                type="button"
+                onClick={() => void loadMoreProducts()}
+                disabled={loadingMore}
+                className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white/80 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loadingMore ? "Loading more..." : "Load more products"}
+              </button>
+            ) : (
+              <p className="text-xs text-white/30 font-mono">You?ve reached the end of the list.</p>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
