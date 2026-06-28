@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { ProductList } from "@/components/product-list";
 import { SiteNavbar } from "@/components/site-navbar";
 
@@ -6,6 +7,21 @@ export const metadata = {
   title: "Products — StreamMVP",
   description: "Browse product listings from the StreamMVP marketplace.",
 };
+
+function ProductListFallback() {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-4 space-y-3 animate-pulse">
+          <div className="aspect-[4/3] rounded-xl bg-white/[0.05]" />
+          <div className="h-4 w-3/4 rounded-full bg-white/[0.05]" />
+          <div className="h-3 w-1/2 rounded-full bg-white/[0.04]" />
+          <div className="h-9 rounded-xl bg-white/[0.04]" />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function ProductsPage() {
   return (
@@ -61,7 +77,9 @@ export default function ProductsPage() {
 
       {/* Product grid */}
       <main className="max-w-7xl mx-auto px-6 py-10 pb-24">
-        <ProductList />
+        <Suspense fallback={<ProductListFallback />}>
+          <ProductList />
+        </Suspense>
       </main>
     </div>
   );

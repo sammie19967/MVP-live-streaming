@@ -187,6 +187,7 @@ export default function ProductDetailPage({
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -228,6 +229,19 @@ export default function ProductDetailPage({
   }
 
   const discounted = product && product.discount_percent > 0;
+  const shareUrl = product?.share_url ?? (product ? `/products/${product.slug}` : '');
+
+  async function copyShareLink() {
+    if (!product) return;
+    const url = product.share_url ?? `${window.location.origin}/products/${product.slug}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareMessage('Share link copied.');
+      window.setTimeout(() => setShareMessage(null), 2500);
+    } catch {
+      setShareMessage('Copy failed. You can use the URL below.');
+    }
+  }
 
   return (
     <div className="min-h-screen">
@@ -358,22 +372,36 @@ export default function ProductDetailPage({
                 </dl>
 
                 {/* CTA */}
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="button"
-                    className="flex-1 py-3.5 rounded-2xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition-all duration-200 shadow-xl shadow-violet-900/30 hover:-translate-y-0.5"
-                  >
-                    Contact seller
-                  </button>
-                  <button
-                    type="button"
-                    className="w-12 h-12 rounded-2xl border border-white/[0.1] bg-white/[0.04] hover:bg-white/[0.08] text-white/50 hover:text-rose-400 transition-all duration-200 flex items-center justify-center"
-                    title="Save to wishlist"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                    </svg>
-                  </button>
+                <div className="space-y-3 pt-2">
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      className="flex-1 py-3.5 rounded-2xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition-all duration-200 shadow-xl shadow-violet-900/30 hover:-translate-y-0.5"
+                    >
+                      Contact seller
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void copyShareLink()}
+                      className="w-12 h-12 rounded-2xl border border-white/[0.1] bg-white/[0.04] hover:bg-white/[0.08] text-white/50 hover:text-violet-300 transition-all duration-200 flex items-center justify-center"
+                      title="Copy share link"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12a4 4 0 014-4h2m4 8h2a4 4 0 000-8h-2m-4 8h4" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-1 text-xs text-white/35 font-mono">
+                    <span>Share link</span>
+                    <div className="flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2">
+                      <input
+                        readOnly
+                        value={shareUrl}
+                        className="w-full bg-transparent outline-none text-white/70 truncate"
+                      />
+                    </div>
+                    {shareMessage ? <span className="text-violet-300">{shareMessage}</span> : null}
+                  </div>
                 </div>
               </div>
             </div>

@@ -87,7 +87,7 @@ class ProductListView(APIView):
 
         category_id = params.get("category")
         if category_id:
-            category = Category.objects.filter(id=category_id, is_active=True).first()
+            category = self._resolve_category_filter(category_id)
             if category:
                 queryset = queryset.filter(category__full_path__startswith=category.full_path)
 
@@ -129,6 +129,17 @@ class ProductListView(APIView):
         }
         return queryset.order_by(sort_map.get(ordering, "-created_at"))
 
+    def _resolve_category_filter(self, value):
+        raw_value = str(value).strip()
+        if not raw_value:
+            return None
+
+        selected_id = raw_value.split(".")[-1]
+        if not selected_id.isdigit():
+            return None
+
+        return Category.objects.filter(id=selected_id, is_active=True).first()
+
     def _parse_decimal(self, value):
         if value in (None, ""):
             return None
@@ -162,3 +173,7 @@ class ProductReviewCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         review = serializer.save()
         return Response(ProductReviewCreateSerializer(review, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+
+
+

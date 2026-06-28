@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { getMediaUrl, getProductMeta, getProducts, type Category, type Country, type Location, type Product } from "@/lib/api";
 
@@ -19,6 +20,11 @@ type FilterState = {
   ordering: SortMode;
 };
 
+type OptionNode<T> = {
+  item: T;
+  children: OptionNode<T>[];
+};
+
 const DEFAULT_FILTERS: FilterState = {
   q: "",
   category: "",
@@ -30,6 +36,64 @@ const DEFAULT_FILTERS: FilterState = {
   max_price: "",
   ordering: "newest",
 };
+
+function buildTree<T extends { id: number; parent: number | null }>(items: T[]): OptionNode<T>[] {
+  const byParent = new Map<number | null, T[]>();
+  for (const item of items) {
+    const bucket = byParent.get(item.parent) ?? [];
+    bucket.push(item);
+    byParent.set(item.parent, bucket);
+  }
+
+  const build = (parent: number | null): OptionNode<T>[] =>
+    (byParent.get(parent) ?? []).map((item) => ({ item, children: build(item.id) }));
+
+  return build(null);
+}
+
+function findNodeAtPath<T extends { id: number }>(nodes: OptionNode<T>[], selectedIds: number[]) {
+  let currentNodes = nodes;
+  let current: OptionNode<T> | null = null;
+
+  for (const selectedId of selectedIds) {
+    current = currentNodes.find((node) => node.item.id === selectedId) ?? null;
+    if (!current) return null;
+    currentNodes = current.children;
+  }
+
+  return current;
+}
+
+function parseFiltersFromSearchParams(searchParams: URLSearchParams): FilterState {
+  const q = searchParams.get("q") ?? "";
+  const category = searchParams.get("category") ?? "";
+  const country = searchParams.get("country") ?? "";
+  const location = searchParams.get("location") ?? "";
+  const conditionParam = searchParams.get("condition") ?? "";
+  const condition = conditionParam === "new" || conditionParam === "used" || conditionParam === "refurbished" ? conditionParam : "";
+  const negotiableParam = (searchParams.get("negotiable") ?? "").toLowerCase();
+  const negotiable = negotiableParam === "true" || negotiableParam === "1" ? "true" : negotiableParam === "false" || negotiableParam === "0" ? "false" : "";
+  const min_price = searchParams.get("min_price") ?? "";
+  const max_price = searchParams.get("max_price") ?? "";
+  const orderingParam = searchParams.get("ordering") ?? "newest";
+  const ordering: SortMode = orderingParam === "oldest" || orderingParam === "price_low" || orderingParam === "price_high" ? orderingParam : "newest";
+
+  return { q, category, country, location, condition, negotiable, min_price, max_price, ordering };
+}
+
+function buildSearchParams(filters: FilterState) {
+  const params = new URLSearchParams();
+  if (filters.q.trim()) params.set("q", filters.q.trim());
+  if (filters.category) params.set("category", filters.category);
+  if (filters.country) params.set("country", filters.country);
+  if (filters.location) params.set("location", filters.location);
+  if (filters.condition) params.set("condition", filters.condition);
+  if (filters.negotiable) params.set("negotiable", filters.negotiable);
+  if (filters.min_price.trim()) params.set("min_price", filters.min_price.trim());
+  if (filters.max_price.trim()) params.set("max_price", filters.max_price.trim());
+  if (filters.ordering !== "newest") params.set("ordering", filters.ordering);
+  return params;
+}
 
 function formatPrice(product: Product) {
   const value = product.discount_percent > 0 ? product.effective_price : Number(product.price);
@@ -181,15 +245,137 @@ function SelectField({ label, value, onChange, children }: { label: string; valu
   );
 }
 
+function CategoryField({ categories, value, onChange }: { categories: Category[]; value: string; onChange: (value: string) => void; }) {
+  const tree = useMemo(() => buildTree(categories), [categories]);
+  const levels = useMemo(() => {
+    const selectedIds = value ? value.split(".").map((part) => Number(part)).filter(Boolean) : [];
+    const rows: Array<{ key: string; options: OptionNode<Category>[]; selected: string }> = [];
+    let nodes = tree;
+    let path: number[] = [];
+
+    rows.push({ key: "root", options: nodes, selected: selectedIds[0] ? String(selectedIds[0]) : "" });
+    for (let i = 0; i < selectedIds.length; i++) {
+      const node = nodes.find((entry) => entry.item.id === selectedIds[i]);
+      if (!node) break;
+      path = [...path, node.item.id];
+      nodes = node.children;
+      if (nodes.length) {
+        rows.push({ key: path.join("-"), options: nodes, selected: selectedIds[i + 1] ? String(selectedIds[i + 1]) : "" });
+      }
+    }
+    return rows;
+  }, [tree, value]);
+
+  const updateAtLevel = (levelIndex: number, nextValue: string) => {
+    const nextIds = value ? value.split(".").map((part) => Number(part)).filter(Boolean) : [];
+    const truncated = nextIds.slice(0, levelIndex);
+    if (nextValue) truncated[levelIndex] = Number(nextValue);
+    onChange(truncated.join("."));
+  };
+
+  return (
+    <div className="flex flex-col gap-2 text-xs text-white/50 font-mono">
+      <span>Category</span>
+      <div className="space-y-2">
+        {levels.map((level, index) => (
+          <select
+            key={level.key}
+            value={level.selected}
+            onChange={(e) => updateAtLevel(index, e.target.value)}
+            className="appearance-none w-full rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-2.5 text-sm text-white/80 focus:outline-none focus:border-violet-500/50"
+          >
+            <option value="">{index === 0 ? "All categories" : "Select subcategory"}</option>
+            {level.options.map((node) => (
+              <option key={node.item.id} value={node.item.id}>
+                {"\u00A0\u00A0".repeat(node.item.level - 1)}{node.item.name}
+              </option>
+            ))}
+          </select>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LocationField({ locations, countryId, value, onCountryChange, onLocationChange, countries }: { locations: Location[]; countryId: string; value: string; onCountryChange: (value: string) => void; onLocationChange: (value: string) => void; countries: Country[]; }) {
+  const locationTree = useMemo(() => buildTree(locations.filter((location) => !countryId || String(location.country) === countryId)), [locations, countryId]);
+  const levels = useMemo(() => {
+    const selectedIds = value ? value.split(".").map((part) => Number(part)).filter(Boolean) : [];
+    const rows: Array<{ key: string; options: OptionNode<Location>[]; selected: string }> = [];
+    let nodes = locationTree;
+    let path: number[] = [];
+
+    rows.push({ key: "root", options: nodes, selected: selectedIds[0] ? String(selectedIds[0]) : "" });
+    for (let i = 0; i < selectedIds.length; i++) {
+      const node = nodes.find((entry) => entry.item.id === selectedIds[i]);
+      if (!node) break;
+      path = [...path, node.item.id];
+      nodes = node.children;
+      if (nodes.length) {
+        rows.push({ key: path.join("-"), options: nodes, selected: selectedIds[i + 1] ? String(selectedIds[i + 1]) : "" });
+      }
+    }
+    return rows;
+  }, [locationTree, value]);
+
+  const updateAtLevel = (levelIndex: number, nextValue: string) => {
+    const nextIds = value ? value.split(".").map((part) => Number(part)).filter(Boolean) : [];
+    const truncated = nextIds.slice(0, levelIndex);
+    if (nextValue) truncated[levelIndex] = Number(nextValue);
+    onLocationChange(truncated.join("."));
+  };
+
+  return (
+    <div className="flex flex-col gap-2 text-xs text-white/50 font-mono">
+      <span>Location</span>
+      <div className="flex flex-col gap-2">
+        <select
+          value={countryId}
+          onChange={(e) => onCountryChange(e.target.value)}
+          className="appearance-none rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-2.5 text-sm text-white/80 focus:outline-none focus:border-violet-500/50"
+        >
+          <option value="">All countries</option>
+          {countries.map((country) => (
+            <option key={country.id} value={country.id}>{country.name}</option>
+          ))}
+        </select>
+        {levels.map((level, index) => (
+          <select
+            key={level.key}
+            value={level.selected}
+            onChange={(e) => updateAtLevel(index, e.target.value)}
+            className="appearance-none rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-2.5 text-sm text-white/80 focus:outline-none focus:border-violet-500/50"
+          >
+            <option value="">{index === 0 ? "All locations" : "Select sub-location"}</option>
+            {level.options.map((node) => (
+              <option key={node.item.id} value={node.item.id}>
+                {"\u00A0\u00A0".repeat(node.item.level - 1)}{node.item.full_path}
+              </option>
+            ))}
+          </select>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ProductList() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [countries, setCountries] = useState<Country[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
-  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
-  const [pendingSearch, setPendingSearch] = useState("");
+  const [filters, setFilters] = useState<FilterState>(() => parseFiltersFromSearchParams(new URLSearchParams(searchParams.toString())));
+  const [pendingSearch, setPendingSearch] = useState(filters.q);
+
+  useEffect(() => {
+    setFilters(parseFiltersFromSearchParams(new URLSearchParams(searchParams.toString())));
+    setPendingSearch(searchParams.get("q") ?? "");
+  }, [searchParams]);
 
   useEffect(() => {
     let alive = true;
@@ -210,10 +396,18 @@ export function ProductList() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setFilters((current) => ({ ...current, q: pendingSearch.trim() }));
+      setFilters((current) => (current.q === pendingSearch.trim() ? current : { ...current, q: pendingSearch.trim() }));
     }, 300);
     return () => window.clearTimeout(timer);
   }, [pendingSearch]);
+
+  useEffect(() => {
+    const nextParams = buildSearchParams(filters).toString();
+    const currentParams = searchParams.toString();
+    if (nextParams !== currentParams) {
+      router.replace(nextParams ? `${pathname}?${nextParams}` : pathname, { scroll: false });
+    }
+  }, [filters, pathname, router, searchParams]);
 
   useEffect(() => {
     let alive = true;
@@ -249,10 +443,11 @@ export function ProductList() {
     };
   }, [filters]);
 
-  const filteredLocations = useMemo(
-    () => locations.filter((location) => !filters.country || String(location.country) === filters.country),
-    [filters.country, locations],
-  );
+  const resetFilters = () => {
+    setPendingSearch("");
+    setFilters(DEFAULT_FILTERS);
+    router.replace(pathname, { scroll: false });
+  };
 
   return (
     <div className="space-y-6">
@@ -267,40 +462,38 @@ export function ProductList() {
           />
         </label>
 
-        <SelectField label="Category" value={filters.category} onChange={(value) => setFilters((current) => ({ ...current, category: value }))}>
-          <option value="">All categories</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>{category.full_path}</option>
-          ))}
-        </SelectField>
+        <div className="lg:col-span-4">
+          <CategoryField categories={categories} value={filters.category} onChange={(value) => setFilters((current) => ({ ...current, category: value }))} />
+        </div>
 
-        <SelectField label="Country" value={filters.country} onChange={(value) => setFilters((current) => ({ ...current, country: value, location: "" }))}>
-          <option value="">All countries</option>
-          {countries.map((country) => (
-            <option key={country.id} value={country.id}>{country.name}</option>
-          ))}
-        </SelectField>
+        <div className="lg:col-span-4">
+          <LocationField
+            locations={locations}
+            countries={countries}
+            countryId={filters.country}
+            value={filters.location}
+            onCountryChange={(value) => setFilters((current) => ({ ...current, country: value, location: "" }))}
+            onLocationChange={(value) => setFilters((current) => ({ ...current, location: value }))}
+          />
+        </div>
 
-        <SelectField label="Location" value={filters.location} onChange={(value) => setFilters((current) => ({ ...current, location: value }))}>
-          <option value="">All locations</option>
-          {filteredLocations.map((location) => (
-            <option key={location.id} value={location.id}>{location.full_path}</option>
-          ))}
-        </SelectField>
+        <div className="lg:col-span-3">
+          <SelectField label="Condition" value={filters.condition} onChange={(value) => setFilters((current) => ({ ...current, condition: value as FilterState["condition"] }))}>
+            <option value="">Any condition</option>
+            <option value="new">New</option>
+            <option value="used">Used</option>
+            <option value="refurbished">Refurbished</option>
+          </SelectField>
+        </div>
 
-        <SelectField label="Condition" value={filters.condition} onChange={(value) => setFilters((current) => ({ ...current, condition: value as FilterState["condition"] }))}>
-          <option value="">Any condition</option>
-          <option value="new">New</option>
-          <option value="used">Used</option>
-          <option value="refurbished">Refurbished</option>
-        </SelectField>
-
-        <SelectField label="Sort" value={filters.ordering} onChange={(value) => setFilters((current) => ({ ...current, ordering: value as SortMode }))}>
-          <option value="newest">Newest first</option>
-          <option value="oldest">Oldest first</option>
-          <option value="price_low">Price: Low to High</option>
-          <option value="price_high">Price: High to Low</option>
-        </SelectField>
+        <div className="lg:col-span-3">
+          <SelectField label="Sort" value={filters.ordering} onChange={(value) => setFilters((current) => ({ ...current, ordering: value as SortMode }))}>
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="price_low">Price: Low to High</option>
+            <option value="price_high">Price: High to Low</option>
+          </SelectField>
+        </div>
 
         <label className="flex flex-col gap-2 text-xs text-white/50 font-mono">
           <span>Min price</span>
@@ -312,15 +505,17 @@ export function ProductList() {
           <input value={filters.max_price} onChange={(e) => setFilters((current) => ({ ...current, max_price: e.target.value }))} placeholder="Any" inputMode="decimal" className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-2.5 text-sm text-white/80 placeholder:text-white/30 focus:outline-none focus:border-violet-500/50" />
         </label>
 
-        <SelectField label="Negotiable" value={filters.negotiable} onChange={(value) => setFilters((current) => ({ ...current, negotiable: value as FilterState["negotiable"] }))}>
-          <option value="">Any</option>
-          <option value="true">Yes</option>
-          <option value="false">No</option>
-        </SelectField>
+        <div className="lg:col-span-3">
+          <SelectField label="Negotiable" value={filters.negotiable} onChange={(value) => setFilters((current) => ({ ...current, negotiable: value as FilterState["negotiable"] }))}>
+            <option value="">Any</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </SelectField>
+        </div>
 
         <div className="lg:col-span-12 flex flex-wrap items-center justify-between gap-3 pt-1">
           <p className="text-white/30 text-xs font-mono">{loading ? "Loading..." : `${products.length} listings found`}</p>
-          <button type="button" onClick={() => { setPendingSearch(""); setFilters(DEFAULT_FILTERS); }} className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/[0.08]">
+          <button type="button" onClick={resetFilters} className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/[0.08]">
             Reset filters
           </button>
         </div>
@@ -364,3 +559,5 @@ export function ProductList() {
     </div>
   );
 }
+
+

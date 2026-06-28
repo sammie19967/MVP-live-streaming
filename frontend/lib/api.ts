@@ -164,6 +164,7 @@ export type Product = {
   average_rating: number | null;
   review_count: number;
   effective_price: number;
+  share_url?: string;
 };
 
 export type ReviewPayload = {
@@ -502,11 +503,14 @@ export async function getUsers(token: string, options?: { onlineOnly?: boolean }
   return parseResponse<User[]>(response);
 }
 
-export async function getProductMeta(token: string) {
+export async function getProductMeta(token?: string) {
+  const headers: HeadersInit = {};
+  if (token) {
+    headers.Authorization = `Token ${token}`;
+  }
+
   const response = await fetch(`${API_BASE_URL}/api/products/meta/`, {
-    headers: withNgrokHeaders({
-      Authorization: `Token ${token}`,
-    }),
+    headers: withNgrokHeaders(headers),
     cache: "no-store",
   });
 
@@ -576,15 +580,26 @@ export async function createProduct(
   return parseResponse<{ message: string; product: Product }>(response);
 }
 
-export async function getProducts() {
-  const response = await fetch(`${API_BASE_URL}/api/products/`, {
+export async function getProducts(filters?: ProductFilters) {
+  const params = new URLSearchParams();
+  if (filters?.q) params.set("q", filters.q);
+  if (filters?.category != null && filters.category !== "") params.set("category", String(filters.category));
+  if (filters?.country != null && filters.country !== "") params.set("country", String(filters.country));
+  if (filters?.location != null && filters.location !== "") params.set("location", String(filters.location));
+  if (filters?.condition) params.set("condition", filters.condition);
+  if (filters?.negotiable !== undefined) params.set("negotiable", String(filters.negotiable));
+  if (filters?.min_price != null && filters.min_price !== "") params.set("min_price", String(filters.min_price));
+  if (filters?.max_price != null && filters.max_price !== "") params.set("max_price", String(filters.max_price));
+  if (filters?.ordering) params.set("ordering", filters.ordering);
+
+  const query = params.toString();
+  const response = await fetch(`${API_BASE_URL}/api/products/${query ? `?${query}` : ""}`, {
     headers: withNgrokHeaders(),
     cache: "no-store",
   });
 
   return parseResponse<Product[]>(response);
 }
-
 export async function getProductBySlug(slug: string) {
   const response = await fetch(`${API_BASE_URL}/api/products/${slug}/`, {
     headers: withNgrokHeaders(),
@@ -626,6 +641,15 @@ export function getMediaUrl(url: string | null): string | null {
   proxiedUrl.searchParams.set("url", mediaUrl.toString());
   return proxiedUrl.toString();
 }
+
+
+
+
+
+
+
+
+
 
 
 

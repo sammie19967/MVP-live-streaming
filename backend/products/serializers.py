@@ -115,6 +115,7 @@ class ProductSerializer(serializers.ModelSerializer):
     review_count = serializers.SerializerMethodField()
     view_count = serializers.SerializerMethodField()
     effective_price = serializers.SerializerMethodField()
+    share_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -144,6 +145,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "review_count",
             "view_count",
             "effective_price",
+            "share_url",
         ]
         read_only_fields = [
             "id",
@@ -159,6 +161,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "review_count",
             "view_count",
             "effective_price",
+            "share_url",
         ]
 
     def get_average_rating(self, obj):
@@ -175,6 +178,13 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def get_effective_price(self, obj):
         return float(obj.discounted_price)
+
+    def get_share_url(self, obj):
+        request = self.context.get("request")
+        relative_url = f"/products/{obj.slug}"
+        if request is not None:
+            return request.build_absolute_uri(relative_url)
+        return relative_url
 
 
 class ProductCreateSerializer(serializers.ModelSerializer):
@@ -316,6 +326,8 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             lineage.append(current)
             current = current.parent
         return lineage
+
+
 
 
 

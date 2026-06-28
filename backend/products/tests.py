@@ -253,7 +253,12 @@ class ProductListFilterTests(TestCase):
         )
         self.country = Country.objects.get(name="Kenya")
         self.android = Category.objects.get(full_path="Electronics & Gadgets > Mobile Phones & Tablets > Smartphones > Android Phones")
-        self.feature_phone = Category.objects.get(full_path="Electronics & Gadgets > Mobile Phones & Tablets > Feature Phones")
+        lineage_ids = []
+        current = self.android
+        while current is not None:
+            lineage_ids.append(current.id)
+            current = current.parent
+        self.other_category = Category.objects.exclude(id__in=lineage_ids).filter(is_active=True).order_by("full_path").first()
         self.nairobi = Location.objects.get(country=self.country, full_path="Nairobi > Nairobi")
         self.kisumu = Location.objects.get(country=self.country, full_path="Kisumu > Kisumu")
 
@@ -273,7 +278,7 @@ class ProductListFilterTests(TestCase):
         )
         self.other = Product.objects.create(
             owner=self.user,
-            category=self.feature_phone,
+            category=self.other_category,
             country=self.country,
             location=self.kisumu,
             title="Nokia 3310",
@@ -292,8 +297,21 @@ class ProductListFilterTests(TestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["id"], self.phone.id)
 
+    def _category_path(self, category):
+        ids = []
+        current = category
+        while current is not None:
+            ids.append(str(current.id))
+            current = current.parent
+        return ".".join(reversed(ids))
+
     def test_product_list_can_filter_by_category(self):
         response = self.client.get(f"/api/products/?category={self.android.id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({item["id"] for item in response.data}, {self.phone.id})
+
+    def test_product_list_can_filter_by_category_path(self):
+        response = self.client.get(f"/api/products/?category={self._category_path(self.android)}")
         self.assertEqual(response.status_code, 200)
         self.assertEqual({item["id"] for item in response.data}, {self.phone.id})
 
@@ -302,3 +320,6 @@ class ProductListFilterTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["id"], self.other.id)
+
+
+

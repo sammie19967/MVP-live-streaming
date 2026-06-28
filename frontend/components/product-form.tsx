@@ -55,7 +55,7 @@ export function ProductForm() {
   const [metaError, setMetaError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [createdProduct, setCreatedProduct] = useState<{ title: string; slug: string } | null>(null);
+  const [createdProduct, setCreatedProduct] = useState<{ title: string; slug: string; shareUrl?: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [selectedCountryId, setSelectedCountryId] = useState<number | "">("");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
@@ -71,6 +71,7 @@ export function ProductForm() {
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [attributeState, setAttributeState] = useState<Record<number, string>>({});
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
 
   const categoryTree = useMemo(() => buildTree(categories), [categories]);
   const categoryNodesByParent = useMemo(() => {
@@ -270,7 +271,7 @@ export function ProductForm() {
           .filter(Boolean),
       });
       setSuccessMessage(response.message);
-      setCreatedProduct({ title: response.product.title, slug: response.product.slug });
+      setCreatedProduct({ title: response.product.title, slug: response.product.slug, shareUrl: response.product.share_url });
       setTitle("");
       setDescription("");
       setPrice("");
@@ -326,9 +327,31 @@ export function ProductForm() {
         {submitError ? <p className="form-error">{submitError}</p> : null}
         {successMessage ? <p className="form-success">{successMessage}</p> : null}
         {createdProduct ? (
-          <p className="form-success" style={{ marginTop: "0.5rem" }}>
-            You can review it at <code>/products/{createdProduct.slug}</code>
-          </p>
+          <div className="form-success" style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <p>
+              You can review it at <code>{createdProduct.slug ? `/products/${createdProduct.slug}` : ''}</code>
+            </p>
+            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+              <code style={{ wordBreak: "break-all" }}>{createdProduct.shareUrl ?? `/products/${createdProduct.slug}`}</code>
+              <button
+                type="button"
+                className="button"
+                onClick={async () => {
+                  const url = createdProduct.shareUrl ?? `${window.location.origin}/products/${createdProduct.slug}`;
+                  try {
+                    await navigator.clipboard.writeText(url);
+                    setCopyMessage('Share link copied.');
+                    window.setTimeout(() => setCopyMessage(null), 2500);
+                  } catch {
+                    setCopyMessage('Copy failed.');
+                  }
+                }}
+              >
+                Copy link
+              </button>
+            </div>
+            {copyMessage ? <span>{copyMessage}</span> : null}
+          </div>
         ) : null}
       </div>
 
