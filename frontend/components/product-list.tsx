@@ -64,6 +64,11 @@ function findNodeAtPath<T extends { id: number }>(nodes: OptionNode<T>[], select
   return current;
 }
 
+function getLeafIdPath(value: string) {
+  if (!value) return "";
+  return value.split(".").filter(Boolean).at(-1) ?? "";
+}
+
 function parseFiltersFromSearchParams(searchParams: URLSearchParams): FilterState {
   const q = searchParams.get("q") ?? "";
   const category = searchParams.get("category") ?? "";
@@ -86,7 +91,8 @@ function buildSearchParams(filters: FilterState) {
   if (filters.q.trim()) params.set("q", filters.q.trim());
   if (filters.category) params.set("category", filters.category);
   if (filters.country) params.set("country", filters.country);
-  if (filters.location) params.set("location", filters.location);
+  const leafLocationId = getLeafIdPath(filters.location);
+  if (leafLocationId) params.set("location", leafLocationId);
   if (filters.condition) params.set("condition", filters.condition);
   if (filters.negotiable) params.set("negotiable", filters.negotiable);
   if (filters.min_price.trim()) params.set("min_price", filters.min_price.trim());
@@ -459,7 +465,7 @@ export function ProductList() {
       q: filters.q,
       category: filters.category,
       country: filters.country,
-      location: filters.location,
+      location: getLeafIdPath(filters.location),
       condition: filters.condition || undefined,
       negotiable: filters.negotiable || undefined,
       min_price: filters.min_price,
@@ -497,7 +503,7 @@ export function ProductList() {
         q: filters.q,
         category: filters.category,
         country: filters.country,
-        location: filters.location,
+        location: getLeafIdPath(filters.location),
         condition: filters.condition || undefined,
         negotiable: filters.negotiable || undefined,
         min_price: filters.min_price,

@@ -102,7 +102,7 @@ class ProductListView(APIView):
 
         location_id = params.get("location")
         if location_id:
-            location = Location.objects.filter(id=location_id, is_active=True).first()
+            location = self._resolve_location_filter(location_id)
             if location:
                 queryset = queryset.filter(location__full_path__startswith=location.full_path)
 
@@ -144,6 +144,17 @@ class ProductListView(APIView):
             return None
 
         return Category.objects.filter(id=selected_id, is_active=True).first()
+
+    def _resolve_location_filter(self, value):
+        raw_value = str(value).strip()
+        if not raw_value:
+            return None
+
+        selected_id = raw_value.split(".")[-1]
+        if not selected_id.isdigit():
+            return None
+
+        return Location.objects.filter(id=selected_id, is_active=True).first()
 
     def _parse_decimal(self, value):
         if value in (None, ""):

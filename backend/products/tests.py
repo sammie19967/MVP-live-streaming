@@ -315,8 +315,22 @@ class ProductListFilterTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual({item["id"] for item in response.data["results"]}, {self.phone.id})
 
+    def _location_path(self, location):
+        ids = []
+        current = location
+        while current is not None:
+            ids.append(str(current.id))
+            current = current.parent
+        return ".".join(reversed(ids))
+
     def test_product_list_can_filter_by_location_and_price(self):
         response = self.client.get(f"/api/products/?location={self.kisumu.id}&min_price=1000&max_price=5000")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["id"], self.other.id)
+
+    def test_product_list_can_filter_by_location_path(self):
+        response = self.client.get(f"/api/products/?country={self.country.id}&location={self._location_path(self.kisumu)}&min_price=1000&max_price=5000")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(response.data["results"][0]["id"], self.other.id)
