@@ -91,8 +91,7 @@ function buildSearchParams(filters: FilterState) {
   if (filters.q.trim()) params.set("q", filters.q.trim());
   if (filters.category) params.set("category", filters.category);
   if (filters.country) params.set("country", filters.country);
-  const leafLocationId = getLeafIdPath(filters.location);
-  if (leafLocationId) params.set("location", leafLocationId);
+  if (filters.location) params.set("location", filters.location);
   if (filters.condition) params.set("condition", filters.condition);
   if (filters.negotiable) params.set("negotiable", filters.negotiable);
   if (filters.min_price.trim()) params.set("min_price", filters.min_price.trim());
@@ -287,7 +286,7 @@ function SelectField({ label, value, onChange, children }: { label: string; valu
   return (
     <label className="flex flex-col gap-2 text-xs text-white/50 font-mono">
       <span>{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="appearance-none rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-2.5 text-sm text-white/80 focus:outline-none focus:border-violet-500/50">
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="appearance-none rounded-xl border border-white/[0.16] bg-white/[0.08] px-3 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60">
         {children}
       </select>
     </label>
@@ -331,7 +330,7 @@ function CategoryField({ categories, value, onChange }: { categories: Category[]
             key={level.key}
             value={level.selected}
             onChange={(e) => updateAtLevel(index, e.target.value)}
-            className="appearance-none w-full rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-2.5 text-sm text-white/80 focus:outline-none focus:border-violet-500/50"
+            className="appearance-none w-full rounded-xl border border-white/[0.16] bg-white/[0.08] px-3 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60"
           >
             <option value="">{index === 0 ? "All categories" : "Select subcategory"}</option>
             {level.options.map((node) => (
@@ -381,7 +380,7 @@ function LocationField({ locations, countryId, value, onCountryChange, onLocatio
         <select
           value={countryId}
           onChange={(e) => onCountryChange(e.target.value)}
-          className="appearance-none rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-2.5 text-sm text-white/80 focus:outline-none focus:border-violet-500/50"
+          className="appearance-none rounded-xl border border-white/[0.16] bg-white/[0.08] px-3 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60"
         >
           <option value="">All countries</option>
           {countries.map((country) => (
@@ -393,7 +392,7 @@ function LocationField({ locations, countryId, value, onCountryChange, onLocatio
             key={level.key}
             value={level.selected}
             onChange={(e) => updateAtLevel(index, e.target.value)}
-            className="appearance-none rounded-xl border border-white/[0.1] bg-white/[0.04] px-3 py-2.5 text-sm text-white/80 focus:outline-none focus:border-violet-500/50"
+            className="appearance-none rounded-xl border border-white/[0.16] bg-white/[0.08] px-3 py-2.5 text-sm text-white focus:outline-none focus:border-violet-500/60"
           >
             <option value="">{index === 0 ? "All locations" : "Select sub-location"}</option>
             {level.options.map((node) => (

@@ -332,3 +332,27 @@ class ProductCreateSerializer(serializers.ModelSerializer):
 
 
 
+
+class ProductUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Product
+        fields = [
+            "category",
+            "country",
+            "location",
+            "title",
+            "description",
+            "price",
+            "currency",
+            "negotiable",
+            "discount_percent",
+            "condition",
+            "is_active",
+        ]
+
+    def validate(self, attrs):
+        country = attrs.get("country", self.instance.country if self.instance else None)
+        location = attrs.get("location", self.instance.location if self.instance else None)
+        if country is not None and location is not None and location.country_id != country.id:
+            raise serializers.ValidationError({"location": "Selected location must belong to the selected country."})
+        return attrs

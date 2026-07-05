@@ -17,6 +17,7 @@ from products.serializers import (
     ProductCreateSerializer,
     ProductReviewCreateSerializer,
     ProductSerializer,
+    ProductUpdateSerializer,
 )
 
 
@@ -206,3 +207,29 @@ class ProductReviewCreateView(APIView):
 
 
 
+
+class ProductOwnerDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self, request, slug):
+        product = get_object_or_404(Product, slug=slug)
+        if product.owner_id != request.user.id and not request.user.is_staff:
+            return None
+        return product
+
+    def patch(self, request, slug):
+        product = self.get_object(request, slug)
+        if product is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ProductUpdateSerializer(product, data=request.data, partial=True, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        product.refresh_from_db()
+        return Response(ProductSerializer(product, context={"request": request}).data)
+
+    def delete(self, request, slug):
+        product = self.get_object(request, slug)
+        if product is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        product.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

@@ -1,4 +1,4 @@
-export type Profile = {
+﻿export type Profile = {
   display_name: string;
   avatar_url: string;
   bio: string;
@@ -44,102 +44,16 @@ export type LiveTokenResponse = {
   role: "creator" | "viewer";
 };
 
-export type Comment = {
-  id: number;
-  session: number;
-  user: User;
-  body: string;
-  parent_id: number | null;
-  is_deleted: boolean;
-  created_at: string;
-};
-
-export type DirectMessage = {
-  id: number;
-  sender: User;
-  recipient: User;
-  body: string;
-  parent_id: number | null;
-  attachment: string | null;
-  attachment_url: string | null;
-  attachment_name: string;
-  attachment_content_type: string;
-  attachment_size: number | null;
-  created_at: string;
-  is_read: boolean;
-};
-
-export type DMThread = {
-  user: User;
-  last_message: DirectMessage | null;
-  unread_count: number;
-};
-
-export type Country = {
-  id: number;
-  name: string;
-  slug: string;
-  code: string;
-};
-
-export type Category = {
-  id: number;
-  name: string;
-  slug: string;
-  parent: number | null;
-  level: number;
-  full_path: string;
-};
-
-export type Location = {
-  id: number;
-  name: string;
-  slug: string;
-  kind: string;
-  level: number;
-  full_path: string;
-  parent: number | null;
-  country: number;
-};
-
-export type AttributeOption = {
-  id: number;
-  label: string;
-  value: string;
-  sort_order: number;
-};
-
-export type AttributeDefinition = {
-  id: number;
-  name: string;
-  code: string;
-  category: number;
-  data_type: "text" | "number" | "boolean" | "select";
-  is_required: boolean;
-  is_filterable: boolean;
-  help_text: string;
-  sort_order: number;
-  options: AttributeOption[];
-};
-
-export type ProductImage = {
-  id: number;
-  image: string;
-  alt_text: string;
-  sort_order: number;
-  created_at: string;
-};
-
-export type ProductReview = {
-  id: number;
-  reviewer: User;
-  rating: number;
-  title: string;
-  body: string;
-  is_approved: boolean;
-  created_at: string;
-};
-
+export type Comment = { id: number; session: number; user: User; body: string; parent_id: number | null; is_deleted: boolean; created_at: string };
+export type DirectMessage = { id: number; sender: User; recipient: User; body: string; parent_id: number | null; attachment: string | null; attachment_url: string | null; attachment_name: string; attachment_content_type: string; attachment_size: number | null; created_at: string; is_read: boolean };
+export type DMThread = { user: User; last_message: DirectMessage | null; unread_count: number };
+export type Country = { id: number; name: string; slug: string; code: string };
+export type Category = { id: number; name: string; slug: string; parent: number | null; level: number; full_path: string };
+export type Location = { id: number; name: string; slug: string; kind: string; level: number; full_path: string; parent: number | null; country: number };
+export type AttributeOption = { id: number; label: string; value: string; sort_order: number };
+export type AttributeDefinition = { id: number; name: string; code: string; category: number; data_type: "text" | "number" | "boolean" | "select"; is_required: boolean; is_filterable: boolean; help_text: string; sort_order: number; options: AttributeOption[] };
+export type ProductImage = { id: number; image: string; alt_text: string; sort_order: number; created_at: string };
+export type ProductReview = { id: number; reviewer: User; rating: number; title: string; body: string; is_approved: boolean; created_at: string };
 export type Product = {
   id: number;
   owner: User;
@@ -163,29 +77,14 @@ export type Product = {
   reviews: ProductReview[];
   average_rating: number | null;
   review_count: number;
+  view_count?: number;
   effective_price: number;
   share_url?: string;
 };
 
-export type ReviewPayload = {
-  rating: number;
-  title: string;
-  body: string;
-};
-
-
-export type RegisterPayload = {
-  username: string;
-  email: string;
-  password: string;
-  is_creator: boolean;
-};
-
-export type LoginPayload = {
-  username: string;
-  password: string;
-};
-
+export type ReviewPayload = { rating: number; title: string; body: string };
+export type RegisterPayload = { username: string; email: string; password: string; is_creator: boolean };
+export type LoginPayload = { username: string; password: string };
 export type ProductFilters = {
   q?: string;
   category?: number | string;
@@ -199,472 +98,63 @@ export type ProductFilters = {
   page?: number;
   page_size?: number;
 };
+export type PaginatedResponse<T> = { count: number; next: string | null; previous: string | null; results: T[] };
 
-export type PaginatedResponse<T> = {
-  count: number;
-  next: string | null;
-  previous: string | null;
-  results: T[];
-};
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_BASE_URL ?? deriveWebSocketBaseUrl(API_BASE_URL);
 
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
-const WS_BASE_URL =
-  process.env.NEXT_PUBLIC_WS_BASE_URL ?? deriveWebSocketBaseUrl(API_BASE_URL);
-
-function withNgrokHeaders(headers?: HeadersInit) {
-  return headers ?? {};
-}
-
-function deriveWebSocketBaseUrl(httpBaseUrl: string) {
-  const url = new URL(httpBaseUrl);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.pathname = "";
-  url.search = "";
-  url.hash = "";
-  return url.toString().replace(/\/$/, "");
-}
+function withNgrokHeaders(headers?: HeadersInit) { return headers ?? {}; }
+function deriveWebSocketBaseUrl(httpBaseUrl: string) { const url = new URL(httpBaseUrl); url.protocol = url.protocol === "https:" ? "wss:" : "ws:"; url.pathname = ""; url.search = ""; url.hash = ""; return url.toString().replace(/\/$/, ""); }
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const responseText = await response.text();
-  let data: unknown = null;
-
-  if (responseText) {
-    try {
-      data = JSON.parse(responseText);
-    } catch {
-      const snippet = responseText.replace(/\s+/g, " ").trim().slice(0, 140);
-      throw new Error(
-        `Request failed with ${response.status} ${response.statusText}: ${snippet || "Non-JSON response."}`,
-      );
-    }
-  }
-
   if (!response.ok) {
-    const errorData = data as { detail?: string } | Record<string, unknown> | null;
-    const detailValue =
-      (errorData && "detail" in errorData ? errorData.detail : null) ||
-      Object.values(errorData || {})
-        .flat()
-        .join(" ") ||
-      "Request failed.";
-    const detail = String(detailValue);
-    throw new Error(detail);
+    if (responseText) {
+      try {
+        const data = JSON.parse(responseText) as { detail?: string } | Record<string, unknown>;
+        const detailValue = (data && "detail" in data ? data.detail : null) || Object.values(data || {}).flat().join(" ") || "Request failed.";
+        throw new Error(String(detailValue));
+      } catch {
+        const snippet = responseText.replace(/\s+/g, " ").trim().slice(0, 140);
+        throw new Error(`Request failed with ${response.status} ${response.statusText}: ${snippet || "Non-JSON response."}`);
+      }
+    }
+    throw new Error(`Request failed with ${response.status} ${response.statusText}.`);
   }
-
-  return data as T;
+  return responseText ? (JSON.parse(responseText) as T) : (null as T);
 }
 
 export async function registerUser(payload: RegisterPayload) {
-  const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
-    method: "POST",
-    headers: {
-      ...withNgrokHeaders({
-        "Content-Type": "application/json",
-      }),
-    },
-    body: JSON.stringify(payload),
-  });
-
+  const response = await fetch(`${API_BASE_URL}/api/auth/register`, { method: "POST", headers: withNgrokHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(payload) });
   return parseResponse<AuthResponse>(response);
 }
-
 export async function loginUser(payload: LoginPayload) {
-  const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-    method: "POST",
-    headers: {
-      ...withNgrokHeaders({
-        "Content-Type": "application/json",
-      }),
-    },
-    body: JSON.stringify(payload),
-  });
-
+  const response = await fetch(`${API_BASE_URL}/api/auth/login`, { method: "POST", headers: withNgrokHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(payload) });
   return parseResponse<AuthResponse>(response);
 }
-
 export async function logoutUser(token: string) {
-  const response = await fetch(`${API_BASE_URL}/api/auth/logout`, {
-    method: "POST",
-    headers: {
-      ...withNgrokHeaders({
-        Authorization: `Token ${token}`,
-      }),
-    },
-  });
-
-  if (!response.ok && response.status !== 204) {
-    await parseResponse(response);
-  }
+  const response = await fetch(`${API_BASE_URL}/api/auth/logout`, { method: "POST", headers: withNgrokHeaders({ Authorization: `Token ${token}` }) });
+  if (!response.ok && response.status !== 204) await parseResponse(response);
 }
-
-export async function getCurrentUser(token: string) {
-  const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-    method: "GET",
-    headers: {
-      ...withNgrokHeaders({
-        Authorization: `Token ${token}`,
-      }),
-    },
-    cache: "no-store",
-  });
-
-  return parseResponse<User>(response);
-}
-
-export async function getLiveFeed(status: string = "live") {
-  const response = await fetch(`${API_BASE_URL}/api/live/feed?status=${status}`, {
-    headers: withNgrokHeaders(),
-    cache: "no-store",
-  });
-
-  return parseResponse<LiveSession[]>(response);
-}
-
-export async function getLiveSession(sessionId: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}`, {
-    headers: withNgrokHeaders(),
-    cache: "no-store",
-  });
-
-  return parseResponse<LiveSession>(response);
-}
-
-export async function startLiveSession(
-  token: string,
-  payload: FormData,
-) {
-  const response = await fetch(`${API_BASE_URL}/api/live/start`, {
-    method: "POST",
-    headers: {
-      ...withNgrokHeaders({
-        Authorization: `Token ${token}`,
-      }),
-    },
-    body: payload,
-  });
-
-  return parseResponse<LiveSession>(response);
-}
-
-export async function endLiveSession(token: string, sessionId: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/end`, {
-    method: "POST",
-    headers: {
-      ...withNgrokHeaders({
-        Authorization: `Token ${token}`,
-      }),
-    },
-  });
-
-  return parseResponse<LiveSession>(response);
-}
-
-export async function getLiveToken(
-  token: string,
-  sessionId: string | number,
-  role: "creator" | "viewer",
-) {
-  const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/token`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...withNgrokHeaders({
-        Authorization: `Token ${token}`,
-      }),
-    },
-    body: JSON.stringify({ role }),
-  });
-
-  return parseResponse<LiveTokenResponse>(response);
-}
-
-export async function getLiveComments(token: string, sessionId: string | number) {
-  const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/comments`, {
-    headers: withNgrokHeaders({
-      Authorization: `Token ${token}`,
-    }),
-    cache: "no-store",
-  });
-
-  return parseResponse<Comment[]>(response);
-}
-
-export async function postLiveComment(
-  token: string,
-  sessionId: string | number,
-  body: string,
-  parentId?: number | null,
-) {
-  const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/comments`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...withNgrokHeaders({
-        Authorization: `Token ${token}`,
-      }),
-    },
-    body: JSON.stringify({ body, ...(parentId != null ? { parent_id: parentId } : {}) }),
-  });
-
-  return parseResponse<Comment>(response);
-}
-
-export async function postLiveReaction(
-  token: string,
-  sessionId: string | number,
-  type: "heart" = "heart",
-) {
-  const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/reactions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...withNgrokHeaders({
-        Authorization: `Token ${token}`,
-      }),
-    },
-    body: JSON.stringify({ type }),
-  });
-
-  return parseResponse<{ created: boolean; heart_count: number }>(response);
-}
-
-export function buildWebSocketUrl(path: string, token?: string | null) {
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const url = new URL(`${WS_BASE_URL}${normalizedPath}`);
-  if (token) {
-    url.searchParams.set("token", token);
-  }
-  return url.toString();
-}
-
-export async function getDMs(token: string, withUserId: number | string) {
-  const response = await fetch(
-    `${API_BASE_URL}/api/users/dms/?with_user_id=${withUserId}`,
-    {
-      headers: withNgrokHeaders({
-        Authorization: `Token ${token}`,
-      }),
-      cache: "no-store",
-    }
-  );
-
-  return parseResponse<DirectMessage[]>(response);
-}
-
-export async function postDM(
-  token: string,
-  recipientId: number | string,
-  body: string,
-  options?: { parentId?: number | null; attachment?: File | null },
-) {
-  const attachment = options?.attachment ?? null;
-  const parentId = options?.parentId ?? null;
-  const requestBody = attachment
-    ? (() => {
-        const formData = new FormData();
-        formData.append("recipient_id", String(recipientId));
-        formData.append("body", body);
-        formData.append("attachment", attachment);
-        if (parentId != null) {
-          formData.append("parent_id", String(parentId));
-        }
-        return formData;
-      })()
-    : JSON.stringify({ recipient_id: recipientId, body, ...(parentId != null ? { parent_id: parentId } : {}) });
-
-  const response = await fetch(`${API_BASE_URL}/api/users/dms/`, {
-    method: "POST",
-    headers: attachment
-      ? withNgrokHeaders({
-          Authorization: `Token ${token}`,
-        })
-      : withNgrokHeaders({
-          "Content-Type": "application/json",
-          Authorization: `Token ${token}`,
-        }),
-    body: requestBody,
-  });
-
-  return parseResponse<DirectMessage>(response);
-}
-
-export async function getDMThreads(token: string) {
-  const response = await fetch(`${API_BASE_URL}/api/users/dms/threads/`, {
-    headers: withNgrokHeaders({
-      Authorization: `Token ${token}`,
-    }),
-    cache: "no-store",
-  });
-
-  return parseResponse<DMThread[]>(response);
-}
-
-export async function getUsers(token: string, options?: { onlineOnly?: boolean }) {
-  const query = options?.onlineOnly ? "?online_only=1" : "";
-  const response = await fetch(`${API_BASE_URL}/api/users/${query}`, {
-    headers: withNgrokHeaders({
-      Authorization: `Token ${token}`,
-    }),
-    cache: "no-store",
-  });
-
-  return parseResponse<User[]>(response);
-}
-
-export async function getProductMeta(token?: string) {
-  const headers: HeadersInit = {};
-  if (token) {
-    headers.Authorization = `Token ${token}`;
-  }
-
-  const response = await fetch(`${API_BASE_URL}/api/products/meta/`, {
-    headers: withNgrokHeaders(headers),
-    cache: "no-store",
-  });
-
-  return parseResponse<{
-    countries: Country[];
-    categories: Category[];
-    locations: Location[];
-    attributes: AttributeDefinition[];
-  }>(response);
-}
-
-export async function createProduct(
-  token: string,
-  payload: {
-    category: number;
-    country: number;
-    location: number;
-    title: string;
-    description: string;
-    price: string;
-    currency: string;
-    negotiable: boolean;
-    discount_percent: number;
-    condition: "new" | "used" | "refurbished";
-    custom_fields: Record<string, unknown>;
-    attribute_values: Array<{
-      definition: number;
-      option?: number | null;
-      value_text?: string;
-      value_number?: number;
-      value_boolean?: boolean;
-    }>;
-    image_files: File[];
-    image_urls: string[];
-  },
-) {
-  const body = new FormData();
-  body.append("category", String(payload.category));
-  body.append("country", String(payload.country));
-  body.append("location", String(payload.location));
-  body.append("title", payload.title);
-  body.append("description", payload.description);
-  body.append("price", payload.price);
-  body.append("currency", payload.currency);
-  body.append("negotiable", String(payload.negotiable));
-  body.append("discount_percent", String(payload.discount_percent));
-  body.append("condition", payload.condition);
-  body.append("custom_fields", JSON.stringify(payload.custom_fields));
-  body.append("attribute_values", JSON.stringify(payload.attribute_values));
-  for (const file of payload.image_files) {
-    body.append("image_files", file);
-  }
-  for (const url of payload.image_urls) {
-    body.append("image_urls", url);
-  }
-
-  const response = await fetch(`${API_BASE_URL}/api/products/create/`, {
-    method: "POST",
-    headers: {
-      ...withNgrokHeaders({
-        Authorization: `Token ${token}`,
-      }),
-    },
-    body,
-  });
-
-  return parseResponse<{ message: string; product: Product }>(response);
-}
-
-export async function getProducts(filters?: ProductFilters) {
-  const params = new URLSearchParams();
-  if (filters?.q) params.set("q", filters.q);
-  if (filters?.category != null && filters.category !== "") params.set("category", String(filters.category));
-  if (filters?.country != null && filters.country !== "") params.set("country", String(filters.country));
-  if (filters?.location != null && filters.location !== "") params.set("location", String(filters.location));
-  if (filters?.condition) params.set("condition", filters.condition);
-  if (filters?.negotiable !== undefined) params.set("negotiable", String(filters.negotiable));
-  if (filters?.min_price != null && filters.min_price !== "") params.set("min_price", String(filters.min_price));
-  if (filters?.max_price != null && filters.max_price !== "") params.set("max_price", String(filters.max_price));
-  if (filters?.ordering) params.set("ordering", filters.ordering);
-  if (filters?.page != null) params.set("page", String(filters.page));
-  if (filters?.page_size != null) params.set("page_size", String(filters.page_size));
-
-  const query = params.toString();
-  const response = await fetch(`${API_BASE_URL}/api/products/${query ? `?${query}` : ""}`, {
-    headers: withNgrokHeaders(),
-    cache: "no-store",
-  });
-
-  return parseResponse<PaginatedResponse<Product>>(response);
-}
-export async function getProductBySlug(slug: string) {
-  const response = await fetch(`${API_BASE_URL}/api/products/${slug}/`, {
-    headers: withNgrokHeaders(),
-    cache: "no-store",
-  });
-
-  return parseResponse<Product>(response);
-}
-
-export async function createProductReview(token: string, slug: string, payload: ReviewPayload) {
-  const response = await fetch(`${API_BASE_URL}/api/products/${slug}/reviews/`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...withNgrokHeaders({
-        Authorization: `Token ${token}`,
-      }),
-    },
-    body: JSON.stringify(payload),
-  });
-
-  return parseResponse<ProductReview>(response);
-}
-
-export function getMediaUrl(url: string | null): string | null {
-  if (!url) return null;
-  const apiOrigin = new URL(API_BASE_URL).origin;
-  const mediaUrl = new URL(url, apiOrigin);
-
-  if (mediaUrl.origin !== apiOrigin) {
-    return mediaUrl.toString();
-  }
-
-  if (typeof window === "undefined") {
-    return mediaUrl.toString();
-  }
-
-  const proxiedUrl = new URL("/api/media", window.location.origin);
-  proxiedUrl.searchParams.set("url", mediaUrl.toString());
-  return proxiedUrl.toString();
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+export async function getCurrentUser(token: string) { const response = await fetch(`${API_BASE_URL}/api/auth/me`, { headers: withNgrokHeaders({ Authorization: `Token ${token}` }), cache: "no-store" }); return parseResponse<User>(response); }
+export async function getLiveFeed(status: string = "live") { const response = await fetch(`${API_BASE_URL}/api/live/feed?status=${encodeURIComponent(status)}`, { headers: withNgrokHeaders(), cache: "no-store" }); return parseResponse<LiveSession[]>(response); }
+export async function getLiveSession(sessionId: string | number) { const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}`, { headers: withNgrokHeaders(), cache: "no-store" }); return parseResponse<LiveSession>(response); }
+export async function startLiveSession(token: string, payload: FormData) { const response = await fetch(`${API_BASE_URL}/api/live/start`, { method: "POST", headers: withNgrokHeaders({ Authorization: `Token ${token}` }), body: payload }); return parseResponse<LiveSession>(response); }
+export async function endLiveSession(token: string, sessionId: string | number) { const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/end`, { method: "POST", headers: withNgrokHeaders({ Authorization: `Token ${token}` }) }); return parseResponse<LiveSession>(response); }
+export async function getLiveToken(token: string, sessionId: string | number, role: "creator" | "viewer") { const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/token`, { method: "POST", headers: withNgrokHeaders({ "Content-Type": "application/json", Authorization: `Token ${token}` }), body: JSON.stringify({ role }) }); return parseResponse<LiveTokenResponse>(response); }
+export async function getLiveComments(token: string, sessionId: string | number) { const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/comments`, { headers: withNgrokHeaders({ Authorization: `Token ${token}` }), cache: "no-store" }); return parseResponse<Comment[]>(response); }
+export async function postLiveComment(token: string, sessionId: string | number, body: string, parentId?: number | null) { const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/comments`, { method: "POST", headers: withNgrokHeaders({ "Content-Type": "application/json", Authorization: `Token ${token}` }), body: JSON.stringify({ body, ...(parentId != null ? { parent_id: parentId } : {}) }) }); return parseResponse<Comment>(response); }
+export async function postLiveReaction(token: string, sessionId: string | number, type: "heart" = "heart") { const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}/reactions`, { method: "POST", headers: withNgrokHeaders({ "Content-Type": "application/json", Authorization: `Token ${token}` }), body: JSON.stringify({ type }) }); return parseResponse<{ created: boolean; heart_count: number }>(response); }
+export function buildWebSocketUrl(path: string, token?: string | null) { const normalizedPath = path.startsWith("/") ? path : `/${path}`; const url = new URL(`${WS_BASE_URL}${normalizedPath}`); if (token) url.searchParams.set("token", token); return url.toString(); }
+export async function getDMs(token: string, withUserId: number | string) { const response = await fetch(`${API_BASE_URL}/api/users/dms/?with_user_id=${withUserId}`, { headers: withNgrokHeaders({ Authorization: `Token ${token}` }), cache: "no-store" }); return parseResponse<DirectMessage[]>(response); }
+export async function postDM(token: string, recipientId: number | string, body: string, options?: { parentId?: number | null; attachment?: File | null }) { const attachment = options?.attachment ?? null; const parentId = options?.parentId ?? null; const requestBody = attachment ? (() => { const formData = new FormData(); formData.append("recipient_id", String(recipientId)); formData.append("body", body); formData.append("attachment", attachment); if (parentId != null) formData.append("parent_id", String(parentId)); return formData; })() : JSON.stringify({ recipient_id: recipientId, body, ...(parentId != null ? { parent_id: parentId } : {}) }); const response = await fetch(`${API_BASE_URL}/api/users/dms/`, { method: "POST", headers: attachment ? withNgrokHeaders({ Authorization: `Token ${token}` }) : withNgrokHeaders({ "Content-Type": "application/json", Authorization: `Token ${token}` }), body: requestBody }); return parseResponse<DirectMessage>(response); }
+export async function getDMThreads(token: string) { const response = await fetch(`${API_BASE_URL}/api/users/dms/threads/`, { headers: withNgrokHeaders({ Authorization: `Token ${token}` }), cache: "no-store" }); return parseResponse<DMThread[]>(response); }
+export async function getUsers(token: string, options?: { onlineOnly?: boolean }) { const query = options?.onlineOnly ? "?online_only=1" : ""; const response = await fetch(`${API_BASE_URL}/api/users/${query}`, { headers: withNgrokHeaders({ Authorization: `Token ${token}` }), cache: "no-store" }); return parseResponse<User[]>(response); }
+export async function getProductMeta(token?: string) { const headers: HeadersInit = {}; if (token) headers.Authorization = `Token ${token}`; const response = await fetch(`${API_BASE_URL}/api/products/meta/`, { headers: withNgrokHeaders(headers), cache: "no-store" }); return parseResponse<{ countries: Country[]; categories: Category[]; locations: Location[]; attributes: AttributeDefinition[] }>(response); }
+export async function createProduct(token: string, payload: { category: number; country: number; location: number; title: string; description: string; price: string; currency: string; negotiable: boolean; discount_percent: number; condition: "new" | "used" | "refurbished"; custom_fields: Record<string, unknown>; attribute_values: Array<{ definition: number; option?: number | null; value_text?: string; value_number?: number; value_boolean?: boolean }>; image_files: File[]; image_urls: string[]; }) { const body = new FormData(); body.append("category", String(payload.category)); body.append("country", String(payload.country)); body.append("location", String(payload.location)); body.append("title", payload.title); body.append("description", payload.description); body.append("price", payload.price); body.append("currency", payload.currency); body.append("negotiable", String(payload.negotiable)); body.append("discount_percent", String(payload.discount_percent)); body.append("condition", payload.condition); body.append("custom_fields", JSON.stringify(payload.custom_fields)); body.append("attribute_values", JSON.stringify(payload.attribute_values)); for (const file of payload.image_files) body.append("image_files", file); for (const url of payload.image_urls) body.append("image_urls", url); const response = await fetch(`${API_BASE_URL}/api/products/create/`, { method: "POST", headers: withNgrokHeaders({ Authorization: `Token ${token}` }), body }); return parseResponse<{ message: string; product: Product }>(response); }
+export async function getProducts(filters?: ProductFilters) { const params = new URLSearchParams(); if (filters?.q) params.set("q", filters.q); if (filters?.category != null && filters.category !== "") params.set("category", String(filters.category)); if (filters?.country != null && filters.country !== "") params.set("country", String(filters.country)); if (filters?.location != null && filters.location !== "") params.set("location", String(filters.location)); if (filters?.condition) params.set("condition", filters.condition); if (filters?.negotiable !== undefined) params.set("negotiable", String(filters.negotiable)); if (filters?.min_price != null && filters.min_price !== "") params.set("min_price", String(filters.min_price)); if (filters?.max_price != null && filters.max_price !== "") params.set("max_price", String(filters.max_price)); if (filters?.ordering) params.set("ordering", filters.ordering); if (filters?.page != null) params.set("page", String(filters.page)); if (filters?.page_size != null) params.set("page_size", String(filters.page_size)); const query = params.toString(); const response = await fetch(`${API_BASE_URL}/api/products/${query ? `?${query}` : ""}`, { headers: withNgrokHeaders(), cache: "no-store" }); return parseResponse<PaginatedResponse<Product>>(response); }
+export async function getProductBySlug(slug: string) { const response = await fetch(`${API_BASE_URL}/api/products/${slug}/`, { headers: withNgrokHeaders(), cache: "no-store" }); return parseResponse<Product>(response); }
+export async function updateProduct(token: string, slug: string, payload: Partial<{ category: number; country: number | null; location: number | null; title: string; description: string; price: string; currency: string; negotiable: boolean; discount_percent: number; condition: "new" | "used" | "refurbished"; is_active: boolean }>) { const response = await fetch(`${API_BASE_URL}/api/products/${slug}/manage/`, { method: "PATCH", headers: withNgrokHeaders({ "Content-Type": "application/json", Authorization: `Token ${token}` }), body: JSON.stringify(payload) }); return parseResponse<Product>(response); }
+export async function deleteProduct(token: string, slug: string) { const response = await fetch(`${API_BASE_URL}/api/products/${slug}/manage/`, { method: "DELETE", headers: withNgrokHeaders({ Authorization: `Token ${token}` }) }); if (!response.ok && response.status !== 204) await parseResponse(response); }
+export async function createProductReview(token: string, slug: string, payload: ReviewPayload) { const response = await fetch(`${API_BASE_URL}/api/products/${slug}/reviews/`, { method: "POST", headers: withNgrokHeaders({ "Content-Type": "application/json", Authorization: `Token ${token}` }), body: JSON.stringify(payload) }); return parseResponse<ProductReview>(response); }
+export function getMediaUrl(url: string | null): string | null { if (!url) return null; const apiOrigin = new URL(API_BASE_URL).origin; const mediaUrl = new URL(url, apiOrigin); if (mediaUrl.origin !== apiOrigin) return mediaUrl.toString(); if (typeof window === "undefined") return mediaUrl.toString(); const proxiedUrl = new URL("/api/media", window.location.origin); proxiedUrl.searchParams.set("url", mediaUrl.toString()); return proxiedUrl.toString(); }
