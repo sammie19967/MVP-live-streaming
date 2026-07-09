@@ -2,6 +2,15 @@ export type Profile = {
   display_name: string;
   avatar_url: string;
   bio: string;
+  account_type: "individual" | "company" | "manufacturer" | "bulk_seller";
+  phone_number: string;
+  location: string;
+  business_name: string;
+  business_registration_number: string;
+  tax_pin: string;
+  website: string;
+  seller_type: string;
+  is_profile_complete: boolean;
 };
 
 export type User = {
@@ -11,39 +20,14 @@ export type User = {
   is_creator: boolean;
   created_at: string;
   profile: Profile;
+  profile_complete: boolean;
   follower_count: number;
   is_online: boolean;
 };
 
-export type AuthResponse = {
-  token: string;
-  user: User;
-};
-
-export type LiveSession = {
-  id: number;
-  creator: User;
-  title: string;
-  status: "scheduled" | "live" | "ended";
-  livekit_room_name: string;
-  started_at: string | null;
-  ended_at: string | null;
-  viewer_count_live: number;
-  total_view_count: number;
-  thumbnail: string | null;
-  created_at: string;
-  comment_count: number;
-  heart_count: number;
-  duration_seconds: number | null;
-};
-
-export type LiveTokenResponse = {
-  token: string;
-  livekit_url: string;
-  room_name: string;
-  role: "creator" | "viewer";
-};
-
+export type AuthResponse = { token: string; user: User };
+export type LiveSession = { id: number; creator: User; title: string; status: "scheduled" | "live" | "ended"; livekit_room_name: string; started_at: string | null; ended_at: string | null; viewer_count_live: number; total_view_count: number; thumbnail: string | null; created_at: string; comment_count: number; heart_count: number; duration_seconds: number | null; };
+export type LiveTokenResponse = { token: string; livekit_url: string; room_name: string; role: "creator" | "viewer" };
 export type Comment = { id: number; session: number; user: User; body: string; parent_id: number | null; is_deleted: boolean; created_at: string };
 export type DirectMessage = { id: number; sender: User; recipient: User; body: string; parent_id: number | null; attachment: string | null; attachment_url: string | null; attachment_name: string; attachment_content_type: string; attachment_size: number | null; created_at: string; is_read: boolean };
 export type DMThread = { user: User; last_message: DirectMessage | null; unread_count: number };
@@ -54,89 +38,25 @@ export type AttributeOption = { id: number; label: string; value: string; sort_o
 export type AttributeDefinition = { id: number; name: string; code: string; category: number; data_type: "text" | "number" | "boolean" | "select"; is_required: boolean; is_filterable: boolean; help_text: string; sort_order: number; options: AttributeOption[] };
 export type ProductImage = { id: number; image: string; alt_text: string; sort_order: number; created_at: string };
 export type ProductReview = { id: number; reviewer: User; rating: number; title: string; body: string; is_approved: boolean; created_at: string };
-export type Product = {
-  id: number;
-  owner: User;
-  owner_username?: string;
-  category: Category;
-  country: Country | null;
-  location: Location | null;
-  title: string;
-  slug: string;
-  description: string;
-  price: string;
-  currency: string;
-  negotiable: boolean;
-  discount_percent: number;
-  condition: "new" | "used" | "refurbished";
-  custom_fields: Record<string, unknown>;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-  images: ProductImage[];
-  reviews: ProductReview[];
-  average_rating: number | null;
-  review_count: number;
-  view_count?: number;
-  effective_price: number;
-  share_url?: string;
-};
-
+export type Product = { id: number; owner: User; owner_username?: string; category: Category; country: Country | null; location: Location | null; title: string; slug: string; description: string; price: string; currency: string; negotiable: boolean; discount_percent: number; condition: "new" | "used" | "refurbished"; custom_fields: Record<string, unknown>; is_active: boolean; created_at: string; updated_at: string; images: ProductImage[]; reviews: ProductReview[]; average_rating: number | null; review_count: number; view_count?: number; effective_price: number; share_url?: string };
 export type ReviewPayload = { rating: number; title: string; body: string };
 export type RegisterPayload = { username: string; email: string; password: string; is_creator: boolean };
 export type LoginPayload = { username: string; password: string };
-export type ProductFilters = {
-  q?: string;
-  category?: number | string;
-  country?: number | string;
-  location?: number | string;
-  condition?: "new" | "used" | "refurbished";
-  negotiable?: boolean | "true" | "false";
-  min_price?: string | number;
-  max_price?: string | number;
-  ordering?: "newest" | "oldest" | "price_low" | "price_high";
-  page?: number;
-  page_size?: number;
-};
+export type ProductFilters = { q?: string; category?: number | string; country?: number | string; location?: number | string; condition?: "new" | "used" | "refurbished"; negotiable?: boolean | "true" | "false"; min_price?: string | number; max_price?: string | number; ordering?: "newest" | "oldest" | "price_low" | "price_high"; page?: number; page_size?: number };
 export type PaginatedResponse<T> = { count: number; next: string | null; previous: string | null; results: T[] };
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_BASE_URL ?? deriveWebSocketBaseUrl(API_BASE_URL);
-
 function withNgrokHeaders(headers?: HeadersInit) { return headers ?? {}; }
 function deriveWebSocketBaseUrl(httpBaseUrl: string) { const url = new URL(httpBaseUrl); url.protocol = url.protocol === "https:" ? "wss:" : "ws:"; url.pathname = ""; url.search = ""; url.hash = ""; return url.toString().replace(/\/$/, ""); }
+async function parseResponse<T>(response: Response): Promise<T> { const responseText = await response.text(); if (!response.ok) { if (responseText) { try { const data = JSON.parse(responseText) as { detail?: string } | Record<string, unknown>; const detailValue = (data && "detail" in data ? data.detail : null) || Object.values(data || {}).flat().join(" ") || "Request failed."; throw new Error(String(detailValue)); } catch { const snippet = responseText.replace(/\s+/g, " ").trim().slice(0, 140); throw new Error(`Request failed with ${response.status} ${response.statusText}: ${snippet || "Non-JSON response."}`); } } throw new Error(`Request failed with ${response.status} ${response.statusText}.`); } return responseText ? (JSON.parse(responseText) as T) : (null as T); }
 
-async function parseResponse<T>(response: Response): Promise<T> {
-  const responseText = await response.text();
-  if (!response.ok) {
-    if (responseText) {
-      try {
-        const data = JSON.parse(responseText) as { detail?: string } | Record<string, unknown>;
-        const detailValue = (data && "detail" in data ? data.detail : null) || Object.values(data || {}).flat().join(" ") || "Request failed.";
-        throw new Error(String(detailValue));
-      } catch {
-        const snippet = responseText.replace(/\s+/g, " ").trim().slice(0, 140);
-        throw new Error(`Request failed with ${response.status} ${response.statusText}: ${snippet || "Non-JSON response."}`);
-      }
-    }
-    throw new Error(`Request failed with ${response.status} ${response.statusText}.`);
-  }
-  return responseText ? (JSON.parse(responseText) as T) : (null as T);
-}
-
-export async function registerUser(payload: RegisterPayload) {
-  const response = await fetch(`${API_BASE_URL}/api/auth/register`, { method: "POST", headers: withNgrokHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(payload) });
-  return parseResponse<AuthResponse>(response);
-}
-export async function loginUser(payload: LoginPayload) {
-  const response = await fetch(`${API_BASE_URL}/api/auth/login`, { method: "POST", headers: withNgrokHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(payload) });
-  return parseResponse<AuthResponse>(response);
-}
-export async function logoutUser(token: string) {
-  const response = await fetch(`${API_BASE_URL}/api/auth/logout`, { method: "POST", headers: withNgrokHeaders({ Authorization: `Token ${token}` }) });
-  if (!response.ok && response.status !== 204) await parseResponse(response);
-}
+export async function registerUser(payload: RegisterPayload) { const response = await fetch(`${API_BASE_URL}/api/auth/register`, { method: "POST", headers: withNgrokHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(payload) }); return parseResponse<AuthResponse>(response); }
+export async function loginUser(payload: LoginPayload) { const response = await fetch(`${API_BASE_URL}/api/auth/login`, { method: "POST", headers: withNgrokHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(payload) }); return parseResponse<AuthResponse>(response); }
+export async function logoutUser(token: string) { const response = await fetch(`${API_BASE_URL}/api/auth/logout`, { method: "POST", headers: withNgrokHeaders({ Authorization: `Token ${token}` }) }); if (!response.ok && response.status !== 204) await parseResponse(response); }
 export async function getCurrentUser(token: string) { const response = await fetch(`${API_BASE_URL}/api/auth/me`, { headers: withNgrokHeaders({ Authorization: `Token ${token}` }), cache: "no-store" }); return parseResponse<User>(response); }
+export async function getProfile(token: string) { const response = await fetch(`${API_BASE_URL}/api/users/profile`, { headers: withNgrokHeaders({ Authorization: `Token ${token}` }), cache: "no-store" }); return parseResponse<Profile>(response); }
+export async function updateProfile(token: string, payload: Partial<Profile>) { const response = await fetch(`${API_BASE_URL}/api/users/profile`, { method: "PATCH", headers: withNgrokHeaders({ "Content-Type": "application/json", Authorization: `Token ${token}` }), body: JSON.stringify(payload) }); return parseResponse<Profile>(response); }
 export async function getLiveFeed(status: string = "live") { const response = await fetch(`${API_BASE_URL}/api/live/feed?status=${encodeURIComponent(status)}`, { headers: withNgrokHeaders(), cache: "no-store" }); return parseResponse<LiveSession[]>(response); }
 export async function getLiveSession(sessionId: string | number) { const response = await fetch(`${API_BASE_URL}/api/live/${sessionId}`, { headers: withNgrokHeaders(), cache: "no-store" }); return parseResponse<LiveSession>(response); }
 export async function startLiveSession(token: string, payload: FormData) { const response = await fetch(`${API_BASE_URL}/api/live/start`, { method: "POST", headers: withNgrokHeaders({ Authorization: `Token ${token}` }), body: payload }); return parseResponse<LiveSession>(response); }
@@ -158,4 +78,3 @@ export async function updateProduct(token: string, slug: string, payload: FormDa
 export async function deleteProduct(token: string, slug: string) { const response = await fetch(`${API_BASE_URL}/api/products/${slug}/manage/`, { method: "DELETE", headers: withNgrokHeaders({ Authorization: `Token ${token}` }) }); if (!response.ok && response.status !== 204) await parseResponse(response); }
 export async function createProductReview(token: string, slug: string, payload: ReviewPayload) { const response = await fetch(`${API_BASE_URL}/api/products/${slug}/reviews/`, { method: "POST", headers: withNgrokHeaders({ "Content-Type": "application/json", Authorization: `Token ${token}` }), body: JSON.stringify(payload) }); return parseResponse<ProductReview>(response); }
 export function getMediaUrl(url: string | null): string | null { if (!url) return null; const apiOrigin = new URL(API_BASE_URL).origin; const mediaUrl = new URL(url, apiOrigin); if (mediaUrl.origin !== apiOrigin) return mediaUrl.toString(); if (typeof window === "undefined") return mediaUrl.toString(); const proxiedUrl = new URL("/api/media", window.location.origin); proxiedUrl.searchParams.set("url", mediaUrl.toString()); return proxiedUrl.toString(); }
-

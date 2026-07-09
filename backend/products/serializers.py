@@ -77,6 +77,12 @@ class ProductReviewCreateSerializer(serializers.ModelSerializer):
         model = ProductReview
         fields = ["rating", "title", "body"]
 
+    def validate(self, attrs):
+        profile = getattr(self.context["request"].user, "profile", None)
+        if not profile or not profile.is_profile_complete:
+            raise serializers.ValidationError({"detail": "Complete your profile before creating a product."})
+        return attrs
+
     def create(self, validated_data):
         product = self.context["product"]
         reviewer = self.context["request"].user

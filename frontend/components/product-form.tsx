@@ -12,7 +12,6 @@ import {
   type Country,
   type Location,
 } from "@/lib/api";
-
 type OptionNode<T> = {
   item: T;
   children: OptionNode<T>[];
@@ -133,9 +132,9 @@ export function ProductForm() {
   );
 
   const hasBasicDraft = Boolean(title.trim() && description.trim() && price.trim());
+  const profileComplete = Boolean(user?.profile_complete);
   const canSubmit =
-    Boolean(token && user) &&
-    !submitting &&
+    Boolean(token && user && profileComplete) &&
     !loadingMeta &&
     hasBasicDraft &&
     Boolean(selectedCountryId) &&
@@ -184,6 +183,15 @@ export function ProductForm() {
     );
   }
   const authToken = token;
+  if (!profileComplete) {
+    return (
+      <section className="panel stack">
+        <h1 className="section-title">Create product</h1>
+        <p className="section-copy">Complete your profile before adding a product.</p>
+        <Link className="button" href="/profile">Complete profile</Link>
+      </section>
+    );
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -658,3 +666,5 @@ export function ProductForm() {
     </div>
   );
 }
+
+
