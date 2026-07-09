@@ -166,6 +166,68 @@ class ProductCreateTests(TestCase):
         self.assertEqual(product.images.count(), 1)
         self.assertTrue(product.images.first().image.name.startswith("product_images/"))
 
+    def test_owner_can_update_product_images_and_alt_text(self):
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        category = Category.objects.get(full_path="Electronics & Gadgets > Mobile Phones & Tablets > Smartphones > Android Phones")
+        country = Country.objects.get(name="Kenya")
+        location = Location.objects.get(country=country, full_path="Nairobi > Nairobi")
+
+        product = Product.objects.create(
+            owner=self.user,
+            category=category,
+            country=country,
+            location=location,
+            title="Samsung Galaxy S24",
+            description="Brand new, sealed box.",
+            price="95000",
+            currency="KES",
+            negotiable=True,
+            discount_percent=10,
+            condition="new",
+            custom_fields={},
+        )
+        image = SimpleUploadedFile(
+            "phone.gif",
+            (
+                b"GIF89a"
+                b"\x01\x00\x01\x00"
+                b"\x80"
+                b"\x00"
+                b"\x00"
+                b"\x00\x00\x00"
+                b"\xff\xff\xff"
+                b"!\xf9\x04\x01\x00\x00\x00\x00"
+                b",\x00\x00\x00\x00\x01\x00\x01\x00\x00"
+                b"\x02\x02D\x01\x00;"
+            ),
+            content_type="image/gif",
+        )
+        product.images.create(image=image, alt_text="Original", sort_order=0)
+
+        response = client.patch(
+            f"/api/products/{product.slug}/manage/",
+            {
+                "title": "Samsung Galaxy S24 Ultra",
+                "images": json.dumps([
+                    {
+                        "id": product.images.first().id,
+                        "alt_text": "Updated hero image",
+                        "sort_order": 3,
+                        "keep": True,
+                    }
+                ]),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        product.refresh_from_db()
+        self.assertEqual(product.title, "Samsung Galaxy S24 Ultra")
+        self.assertEqual(product.images.count(), 1)
+        self.assertEqual(product.images.first().alt_text, "Updated hero image")
+        self.assertEqual(product.images.first().sort_order, 3)
+
     def test_create_product_review_updates_average_rating(self):
         self.client.force_login(self.user)
         category = Category.objects.get(full_path="Electronics & Gadgets > Mobile Phones & Tablets > Smartphones > Android Phones")

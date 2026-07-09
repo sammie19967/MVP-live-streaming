@@ -334,6 +334,8 @@ class ProductCreateSerializer(serializers.ModelSerializer):
 
 
 class ProductUpdateSerializer(serializers.ModelSerializer):
+    custom_fields = serializers.JSONField(required=False)
+
     class Meta:
         model = Product
         fields = [
@@ -348,6 +350,7 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
             "discount_percent",
             "condition",
             "is_active",
+            "custom_fields",
         ]
 
     def validate(self, attrs):
@@ -356,3 +359,81 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
         if country is not None and location is not None and location.country_id != country.id:
             raise serializers.ValidationError({"location": "Selected location must belong to the selected country."})
         return attrs
+
+    def update(self, instance, validated_data):
+        custom_fields = validated_data.pop("custom_fields", None)
+        images_payload = self._load_json_payload("images", None)
+        image_files = self.context["request"].FILES.getlist("image_files")
+
+        if custom_fields is not None and isinstance(custom_fields, dict):
+            instance.custom_fields = custom_fields
+
+        instance = super().update(instance, validated_data)
+
+        if images_payload is not None or image_files:
+            self._sync_images(instance, images_payload, image_files)
+
+        if custom_fields is not None and isinstance(custom_fields, dict):
+            instance.save(update_fields=["custom_fields"])
+
+        return instance
+
+    def _load_json_payload(self, key, default):
+        request_data = self.context["request"].data
+        if hasattr(request_data, "getlist"):
+            values = request_data.getlist(key)
+            if len(values) > 1:
+                value = values
+            elif len(values) == 1:
+                value = values[0]
+            else:
+                value = default
+        else:
+            value = request_data.get(key, default)
+
+        if isinstance(value, (list, tuple)) and len(value) == 1:
+            value = value[0]
+
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return default
+            import json
+
+            return json.loads(value)
+
+        return value
+
+    def _sync_images(self, instance, images_payload, image_files):
+        import json
+
+        existing_images = {image.id: image for image in instance.images.all()}
+        keep_ids = set(existing_images.keys())
+
+        if isinstance(images_payload, str):
+            try:
+                images_payload = json.loads(images_payload)
+            except json.JSONDecodeError:
+                images_payload = []
+
+        if isinstance(images_payload, list):
+            keep_ids = set()
+            for item in images_payload:
+                if not isinstance(item, dict):
+                    continue
+                image_id = item.get("id")
+                if image_id in existing_images:
+                    image = existing_images[image_id]
+                    if item.get("keep", True):
+                        image.alt_text = item.get("alt_text", image.alt_text)
+                        if item.get("sort_order") is not None:
+                            image.sort_order = item["sort_order"]
+                        image.save(update_fields=["alt_text", "sort_order"])
+                        keep_ids.add(image_id)
+
+        instance.images.exclude(id__in=keep_ids).delete()
+
+        next_sort = max([image.sort_order for image in instance.images.all()], default=-1) + 1
+        for index, image_file in enumerate(image_files):
+            ProductImage.objects.create(product=instance, image=image_file, sort_order=next_sort + index)
+
