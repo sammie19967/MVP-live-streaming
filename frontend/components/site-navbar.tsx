@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+
+import { BrandLogo } from "@/components/brand-logo";
 import { useAuth } from "@/components/auth-provider";
 
 export function SiteNavbar() {
@@ -24,21 +26,7 @@ export function SiteNavbar() {
     >
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-6">
         {/* Brand */}
-        <Link href="/" className="flex items-center gap-3 group shrink-0">
-          <div className="relative w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 to-pink-600 flex items-center justify-center shadow-lg shadow-violet-900/40">
-            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M21 3L3 10.53v.98l6.84 2.65L12.48 21h.98L21 3z" />
-            </svg>
-          </div>
-          <div className="flex flex-col leading-none">
-            <span className="text-white font-bold text-sm tracking-tight font-heading">
-              StreamMVP
-            </span>
-            <span className="text-white/30 text-[0.65rem] tracking-wide uppercase font-mono">
-              Live Platform
-            </span>
-          </div>
-        </Link>
+        <BrandLogo />
 
         {/* Center nav links */}
         <nav className="hidden md:flex items-center gap-1">
@@ -118,4 +106,3 @@ export function SiteNavbar() {
     </header>
   );
 }
-

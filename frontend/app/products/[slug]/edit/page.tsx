@@ -21,9 +21,51 @@ type NewImageDraft = {
   previewUrl: string;
 };
 
+type OptionNode<T> = {
+  item: T;
+  children: OptionNode<T>[];
+};
+
 function toNumber(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function buildTree<T extends { id: number; parent: number | null }>(items: T[]): OptionNode<T>[] {
+  const byParent = new Map<number | null, T[]>();
+  for (const item of items) {
+    const bucket = byParent.get(item.parent) ?? [];
+    bucket.push(item);
+    byParent.set(item.parent, bucket);
+  }
+
+  const build = (parent: number | null): OptionNode<T>[] =>
+    (byParent.get(parent) ?? []).map((item) => ({ item, children: build(item.id) }));
+
+  return build(null);
+}
+
+function getNodePath<T extends { id: number }>(nodes: OptionNode<T>[], selectedIds: number[]) {
+  let currentNodes = nodes;
+  const path: OptionNode<T>[] = [];
+
+  for (const selectedId of selectedIds) {
+    const current = currentNodes.find((node) => node.item.id === selectedId) ?? null;
+    if (!current) return [];
+    path.push(current);
+    currentNodes = current.children;
+  }
+
+  return path;
+}
+
+function getPathIds<T extends { id: number }>(path: OptionNode<T>[]) {
+  return path.map((node) => node.item.id);
+}
+
+function getCountryPathIds(countries: Country[], selectedCountryId: number | null) {
+  if (selectedCountryId == null) return [];
+  return countries.some((country) => country.id === selectedCountryId) ? [selectedCountryId] : [];
 }
 
 export default function ProductEditPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -41,6 +83,9 @@ export default function ProductEditPage({ params }: { params: Promise<{ slug: st
   const [draftImages, setDraftImages] = useState<ImageDraft[]>([]);
   const [newImages, setNewImages] = useState<NewImageDraft[]>([]);
   const [customFieldsText, setCustomFieldsText] = useState("");
+  const [selectedCountryId, setSelectedCountryId] = useState<number | "">("");
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
+  const [selectedLocationIds, setSelectedLocationIds] = useState<number[]>([]);
 
   useEffect(() => {
     let alive = true;
@@ -67,10 +112,38 @@ export default function ProductEditPage({ params }: { params: Promise<{ slug: st
   }, [slug, token]);
 
   const isOwner = Boolean(product && user && product.owner.id === user.id);
-  const availableLocations = useMemo(() => {
-    if (!product) return locations;
-    return locations.filter((location) => !product.country || location.country === product.country.id);
-  }, [locations, product]);
+  const categoryTree = useMemo(() => buildTree(categories), [categories]);
+  const locationTree = useMemo(() => buildTree(locations.filter((location) => selectedCountryId === "" || location.country === selectedCountryId)), [locations, selectedCountryId]);
+  const categoryPath = useMemo(() => getNodePath(categoryTree, selectedCategoryIds), [categoryTree, selectedCategoryIds]);
+  const locationPath = useMemo(() => getNodePath(locationTree, selectedLocationIds), [locationTree, selectedLocationIds]);
+  const selectedCategory = categoryPath.at(-1)?.item ?? null;
+  const selectedLocation = locationPath.at(-1)?.item ?? null;
+  const currentCategories = categoryPath.length ? categoryPath.at(-1)!.children : categoryTree;
+  const currentLocations = locationPath.length ? locationPath.at(-1)!.children : locationTree;
+
+  useEffect(() => {
+    if (!product || !categories.length || !locations.length) return;
+
+    const categoryIds: number[] = [];
+    let currentCategory: Category | null = product.category;
+    while (currentCategory) {
+      categoryIds.unshift(currentCategory.id);
+      currentCategory = categories.find((category) => category.id === currentCategory?.parent) ?? null;
+    }
+
+    const countryId = product.country?.id ?? "";
+    const productLocations = locations.filter((location) => !product.country || location.country === product.country.id);
+    const locationIds: number[] = [];
+    let currentLocation: Location | null = product.location ? product.location : null;
+    while (currentLocation) {
+      locationIds.unshift(currentLocation.id);
+      currentLocation = product.country ? productLocations.find((location) => location.id === currentLocation?.parent) ?? null : null;
+    }
+
+    setSelectedCountryId(countryId);
+    setSelectedCategoryIds(categoryIds);
+    setSelectedLocationIds(locationIds);
+  }, [categories, locations, product]);
 
   function updateField<K extends keyof Product>(key: K, value: Product[K]) {
     setProduct((current) => (current ? { ...current, [key]: value } : current));
@@ -86,13 +159,18 @@ export default function ProductEditPage({ params }: { params: Promise<{ slug: st
 
   async function submitSave() {
     if (!token || !product || !isOwner) return;
+    if (!selectedCategory || !selectedLocation || selectedCountryId === "") {
+      setError("Pick a country, location, and category before saving.");
+      return;
+    }
+
     setSaving(true);
     setError(null);
     try {
       const body = new FormData();
-      body.append("category", String(product.category.id));
-      if (product.country) body.append("country", String(product.country.id));
-      if (product.location) body.append("location", String(product.location.id));
+      body.append("category", String(selectedCategory.id));
+      body.append("country", String(selectedCountryId));
+      body.append("location", String(selectedLocation.id));
       body.append("title", product.title.trim());
       body.append("description", product.description.trim());
       body.append("price", String(product.price));
@@ -168,26 +246,108 @@ export default function ProductEditPage({ params }: { params: Promise<{ slug: st
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <label className="flex flex-col gap-2 text-sm text-white/70">
-              Category
-              <select value={product.category.id} onChange={(e) => { const selected = categories.find((item) => item.id === Number(e.target.value)); if (selected) updateField("category", selected as Product["category"]); }} className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-3 text-white">
-                {categories.map((category) => <option key={category.id} value={category.id}>{category.full_path}</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-2 text-sm text-white/70">
               Country
-              <select value={product.country?.id ?? ""} onChange={(e) => { const selected = countries.find((item) => item.id === Number(e.target.value)); updateField("country", (selected ?? null) as Product["country"]); }} className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-3 text-white">
-                <option value="">No country</option>
+              <select
+                value={selectedCountryId}
+                onChange={(e) => {
+                  const value = e.target.value ? Number(e.target.value) : "";
+                  setSelectedCountryId(value);
+                  setSelectedLocationIds([]);
+                  updateField("country", (countries.find((item) => item.id === value) ?? null) as Product["country"]);
+                  updateField("location", null as Product["location"]);
+                }}
+                className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-3 text-white"
+              >
+                <option value="">Select country</option>
                 {countries.map((country) => <option key={country.id} value={country.id}>{country.name}</option>)}
               </select>
             </label>
             <label className="flex flex-col gap-2 text-sm text-white/70">
+              Category
+              <select
+                value={selectedCategoryIds[0] ?? ""}
+                onChange={(e) => {
+                  const value = e.target.value ? Number(e.target.value) : "";
+                  setSelectedCategoryIds(value ? [value] : []);
+                  updateField("category", (categories.find((item) => item.id === value) ?? product.category) as Product["category"]);
+                }}
+                className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-3 text-white"
+              >
+                <option value="">Select category</option>
+                {categoryTree.map((node) => <option key={node.item.id} value={node.item.id}>{node.item.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-2 text-sm text-white/70">
               Location
-              <select value={product.location?.id ?? ""} onChange={(e) => { const selected = availableLocations.find((item) => item.id === Number(e.target.value)); updateField("location", (selected ?? null) as Product["location"]); }} className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-3 text-white">
-                <option value="">No location</option>
-                {availableLocations.map((location) => <option key={location.id} value={location.id}>{location.full_path}</option>)}
+              <select
+                value={selectedLocationIds[0] ?? ""}
+                onChange={(e) => {
+                  const value = e.target.value ? Number(e.target.value) : "";
+                  setSelectedLocationIds(value ? [value] : []);
+                  updateField("location", (locations.find((item) => item.id === value) ?? null) as Product["location"]);
+                }}
+                className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-3 text-white"
+                disabled={selectedCountryId === ""}
+              >
+                <option value="">{selectedCountryId === "" ? "Select country first" : "Select county/city"}</option>
+                {currentLocations.map((node) => <option key={node.item.id} value={node.item.id}>{node.item.name}</option>)}
               </select>
             </label>
           </div>
+
+          {selectedCategoryIds.map((selectedId, index) => {
+            const path = getNodePath(categoryTree, selectedCategoryIds.slice(0, index + 1));
+            const node = path.at(-1);
+            const children = node?.children ?? [];
+            if (!children.length) return null;
+            return (
+              <label key={`${selectedId}-${index}`} className="flex flex-col gap-2 text-sm text-white/70">
+                {index === 0 ? "Subcategory" : `Level ${index + 2}`}
+                <select
+                  className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-3 text-white"
+                  value={selectedCategoryIds[index + 1] ?? ""}
+                  onChange={(e) => {
+                    const value = e.target.value ? Number(e.target.value) : "";
+                    const next = selectedCategoryIds.slice(0, index + 1);
+                    if (value) next.push(value);
+                    setSelectedCategoryIds(next);
+                    const nextNode = getNodePath(categoryTree, next).at(-1)?.item;
+                    if (nextNode) updateField("category", nextNode as Product["category"]);
+                  }}
+                >
+                  <option value="">Select option</option>
+                  {children.map((child) => <option key={child.item.id} value={child.item.id}>{child.item.name}</option>)}
+                </select>
+              </label>
+            );
+          })}
+
+          {selectedLocationIds.map((selectedId, index) => {
+            const path = getNodePath(locationTree, selectedLocationIds.slice(0, index + 1));
+            const node = path.at(-1);
+            const children = node?.children ?? [];
+            if (!children.length) return null;
+            return (
+              <label key={`${selectedId}-${index}`} className="flex flex-col gap-2 text-sm text-white/70">
+                {index === 0 ? "Area / Town" : `Location level ${index + 2}`}
+                <select
+                  className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-3 text-white"
+                  value={selectedLocationIds[index + 1] ?? ""}
+                  onChange={(e) => {
+                    const value = e.target.value ? Number(e.target.value) : "";
+                    const next = selectedLocationIds.slice(0, index + 1);
+                    if (value) next.push(value);
+                    setSelectedLocationIds(next);
+                    const nextNode = getNodePath(locationTree, next).at(-1)?.item;
+                    if (nextNode) updateField("location", nextNode as Product["location"]);
+                  }}
+                >
+                  <option value="">Select option</option>
+                  {children.map((child) => <option key={child.item.id} value={child.item.id}>{child.item.name}</option>)}
+                </select>
+              </label>
+            );
+          })}
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <label className="flex flex-col gap-2 text-sm text-white/70">
@@ -319,4 +479,3 @@ export default function ProductEditPage({ params }: { params: Promise<{ slug: st
     </div>
   );
 }
-

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { useAuth } from "@/components/auth-provider";
 
 export function AuthShell() {
@@ -11,7 +12,7 @@ export function AuthShell() {
     <div className="shell">
       <nav className="nav">
         <div className="nav-brand">
-          <span className="nav-mark">LIVE MVP</span>
+          <BrandLogo showLabel={false} compact={true} />
           <span className="nav-copy">Django auth + Next.js session shell</span>
         </div>
         <div className="nav-row">
@@ -97,3 +98,4 @@ export function AuthShell() {
     </div>
   );
 }
+

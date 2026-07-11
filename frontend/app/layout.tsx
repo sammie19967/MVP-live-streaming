@@ -15,8 +15,13 @@ const monoFont = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "StreamMVP — Live Streaming Platform",
+  title: "KIOSQ - Live Streaming Platform",
   description: "Go live, join live sessions, and engage with your audience in real time.",
+  icons: {
+    icon: "/kiosq-logo.png",
+    shortcut: "/kiosq-logo.png",
+    apple: "/kiosq-logo.png",
+  },
 };
 
 export default function RootLayout({

@@ -186,8 +186,8 @@ main {
 
 .nav-brand {
   display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
+  align-items: center;
+  gap: 0.85rem;
 }
 
 .nav-mark {
@@ -781,3 +781,4 @@ main {
 .placeholder-gradient {
   background: linear-gradient(135deg, var(--accent-soft) 0%, rgba(232, 93, 4, 0.15) 100%);
 }
+
