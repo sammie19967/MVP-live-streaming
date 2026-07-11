@@ -380,10 +380,22 @@ export default function ProductEditPage({ params }: { params: Promise<{ slug: st
             Listing is active
           </label>
 
-          <label className="flex flex-col gap-2 text-sm text-white/70">
-            Custom fields JSON
-            <textarea value={customFieldsText} onChange={(e) => setCustomFieldsText(e.target.value)} rows={5} className="rounded-xl border border-white/[0.1] bg-white/[0.04] px-4 py-3 text-white font-mono text-xs" />
-          </label>
+          {product.custom_fields && Object.keys(product.custom_fields).length ? (
+            <div className="space-y-3">
+              <div>
+                <h2 className="text-lg font-semibold text-white">Custom fields</h2>
+                <p className="text-xs text-white/35 font-mono mt-1">These values were added from the selected category taxonomy.</p>
+              </div>
+              <dl className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {Object.entries(product.custom_fields).map(([key, value]) => (
+                  <div key={key} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
+                    <dt className="text-[0.65rem] uppercase tracking-[0.2em] text-white/35 font-mono">{key}</dt>
+                    <dd className="mt-1 text-sm text-white/80 break-words">{String(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ) : null}
 
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
@@ -479,3 +491,4 @@ export default function ProductEditPage({ params }: { params: Promise<{ slug: st
     </div>
   );
 }
+
